@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 
 from src.database import connect, initialize_database
 from src.routes.requests import router as requests_router
+from src.routes.clock import router as clock_router
 from src.workflow import WorkflowError
 
 
@@ -28,6 +29,8 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="GovFix", version="0.1.0", lifespan=lifespan)
 app.include_router(requests_router)
+app.include_router(clock_router)
+
 
 
 @app.exception_handler(WorkflowError)

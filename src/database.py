@@ -75,3 +75,15 @@ def database_connection(
         yield connection
     finally:
         connection.close()
+
+
+# Compatibility helpers for services and tests
+DEFAULT_DB_PATH = str(DEFAULT_DATABASE_PATH)
+get_db_connection = connect
+
+
+def init_db(database_path: str | Path | None = None) -> None:
+    """Initialize database tables and triggers if not already present."""
+    with database_connection(database_path) as conn:
+        initialize_database(conn)
+

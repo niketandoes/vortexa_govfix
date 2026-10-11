@@ -111,8 +111,10 @@ The implementation uses a conditional request update inside `BEGIN IMMEDIATE` an
 
 ## 6. Confirmed Decisions & Implementation Notes
 1. **Escalation Execution:** Confirmed **Event-driven & On-demand**. Escalation checks execute immediately whenever the simulated clock is advanced (`/api/v1/clock/advance`) or when grievance queues are queried, eliminating unnecessary background polling threads while ensuring instant state accuracy.
-2. **Calendar Time SLA:** SLA calculations use continuous calendar hours from the current `sla_started_at`; the first cycle starts at `created_at`.
-3. **Escalation Lifecycle:** Levels remain elevated during an active SLA cycle until resolution. Reopening creates a new cycle and resets the level to 0 in the same transaction.
-4. **Idempotent Audit Log:** Conditional updates, serialized writes, and the escalation `dedupe_key` uniqueness guard prevent duplicates.
-5. **Level 2 Recipient:** The MVP uses `USR-SUP-01`, the seeded Municipal Head with authorization role `Supervisor`; a separate notification-recipient model may be added later.
+2. **Clock UI Controls:** Predefined one-click fast-forward buttons (`+1h`, `+12h`, `+24h`, `+72h`, `+7d`) plus a `Reset Clock` button on the Supervisor and Administrative headers.
+3. **Calendar Time SLA:** SLA calculations use continuous calendar hours from the current `sla_started_at`; the first cycle starts at `created_at`.
+4. **Escalation Lifecycle:** Levels remain elevated during an active SLA cycle until resolution. Reopening creates a new cycle and resets the level to 0 in the same transaction.
+5. **Idempotent Audit Log:** Conditional updates, serialized writes, and the escalation `dedupe_key` uniqueness guard prevent duplicates.
+6. **Level 2 Recipient:** The MVP uses `USR-SUP-01`, the seeded Municipal Head with authorization role `Supervisor`; a separate notification-recipient model may be added later.
+
 

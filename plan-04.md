@@ -98,6 +98,10 @@ The design follows the fundamental VORTEXA rule: **AI suggests, deterministic ru
 
 ## 6. Confirmed Decisions & Implementation Notes
 1. **Dual-Path Strategy:** Confirmed dual-path with silent fallback. If `GEMINI_API_KEY` is present and functional, Gemini LLM is invoked; if missing or unreachable, the system automatically falls back to the local `scikit-learn` TF-IDF classifier without crashing or interrupting operations.
-2. **Suggestion Metadata:** Every suggestion record in `ai_suggestions` is tagged with `source='gemini_llm'` or `source='local_fallback'`.
-3. **Architectural Isolation:** Application-level capability isolation is enforced through the narrow suggestion repository, AST checks, and runtime mutation tests. This is not described as SQLite table-level permission enforcement.
+2. **API Key Input:** Provided via the environment variable `GEMINI_API_KEY`.
+3. **Training Dataset (`src/ai/dataset.json`):** 100 realistic synthetic grievances featuring bilingual / Hinglish Indian municipal context (e.g. Ward numbers, MG Road, water leak bursts, streetlights, potholes) generated automatically and bundled in repository.
+4. **Duplicate Detection Scope:** Kept as a documented extension for now to keep the live MVP streamlined on core categorisation, location/urgency extraction, and reply drafting.
+5. **Suggestion Metadata:** Every suggestion record in `ai_suggestions` is tagged with `source='gemini_llm'` or `source='local_fallback'`.
+6. **Architectural Isolation:** Application-level capability isolation is enforced through the narrow suggestion repository, AST checks, and runtime mutation tests.
+
 
