@@ -81,18 +81,22 @@ For live judging, `scripts/tamper_demo.py` first copies the seeded database to a
 
 ## 4. Adversarial Test Suite
 
-The test suite formally validates all 8 core invariants under adversarial conditions:
+The test suite formally validates all 12 core invariants under adversarial conditions:
 
 | Invariant | Test Method | Expected Outcome |
 | :--- | :--- | :--- |
 | **State Skipping** | Attempt transition `ASSIGNED` ➔ `RESOLVED` directly | Refused with HTTP 422, `from_state` and allowed states in error, logged to audit. |
 | **Unauthorized Role** | From `IN_PROGRESS`, Citizen attempts the otherwise valid transition to `RESOLVED` | Refused with HTTP 403, logged as role violation in audit. |
 | **Field Officer Isolation** | Field Officer B attempts to start work or resolve Field Officer A's ticket | Refused with HTTP 403, logged as unauthorized assignment attempt. |
+| **Audit Inspector Isolation** | Audit Inspector calls a request mutation or operational queue endpoint | Refused with HTTP 403; audit and verification reads remain available. |
 | **Tamper Resistance** | Update a row directly in SQLite | Trigger aborts update; if forced on demo copy, verification fails and identifies row. |
 | **AI Boundary Isolation** | AST checks plus runtime capability tests | Fails if AI imports workflow/request repositories or can mutate `requests`/`audit`. |
 | **Offline Resilience** | Disconnect external internet / remove API key | System switches cleanly to local TF-IDF fallback with zero errors. |
 | **Idempotent Escalation** | Run concurrent evaluation at the same clock time | Exactly one escalation audit entry per request, level, and SLA cycle. |
 | **Ownership Enforcement** | Citizen A attempts to close/reopen Citizen B's complaint | Refused with HTTP 403, logged to audit. |
+| **Closed Reopen Window** | Owner attempts `CLOSED -> REOPENED` after seven days | Refused with HTTP 422; SLA cycle and ticket remain unchanged. |
+| **Resolution Evidence** | Assigned Field Officer attempts `IN_PROGRESS -> RESOLVED` without structured evidence | Refused with HTTP 422 and logged. |
+| **Appeal Approval** | Supervisor attempts `REJECTED -> ACKNOWLEDGED` without a pending Citizen appeal or approval note | Refused with HTTP 422 and logged. |
 
 ---
 
@@ -100,13 +104,13 @@ The test suite formally validates all 8 core invariants under adversarial condit
 
 The walkthrough uses named records so the happy path, dispute, and escalation proofs do not invalidate one another:
 
-1. **Step 1 — Citizen Submission & AI Advisory:** Submit Pothole Complaint A as Ramesh Patel (`USR-CIT-01`) on `/citizen`. Receive unique tracking token `REQ-2026-0001`. Show the AI suggestion for category and location preview while state remains `SUBMITTED`.
+1. **Step 1 — Citizen Submission & AI Advisory:** After resetting the six-record fixture, submit Pothole Complaint A as Ramesh Patel (`USR-CIT-01`) on `/citizen`. Receive the next unique tracking token `REQ-2026-0007`. Show the AI suggestion for category and location preview while state remains `SUBMITTED`.
 2. **Step 2 — Triage Officer Review & Assignment:** Log in as Triage Officer Anil Kumar (`USR-OFF-01`) on `/officer`. Acknowledge complaint (`SUBMITTED → ACKNOWLEDGED`). Assign it to Field Officer Vikram Singh (`USR-FLD-01`). Confirm the ticket moves to `ASSIGNED` and leaves the triage intake queue.
 3. **Step 3 — Field Officer Queue & Invalid Transition Blocked:** Switch to `/field-officer` as Vikram Singh (`USR-FLD-01`). Observe that Sunita Rao (`USR-FLD-02`) cannot see Vikram's case. Attempt `ASSIGNED → RESOLVED` directly; verify HTTP 422 refusal, ticket unchanged, and refusal logged to audit.
-4. **Step 4 — Field Execution & Citizen Closure:** Vikram Singh moves `ASSIGNED → IN_PROGRESS`. Switch to Ramesh Patel and attempt `IN_PROGRESS → RESOLVED`; verify HTTP 403 role violation. Vikram Singh submits resolution notes and photos (`IN_PROGRESS → RESOLVED`). Switch to Ramesh Patel on `/citizen` and confirm resolution (`RESOLVED → CLOSED`).
+4. **Step 4 — Field Execution & Citizen Closure:** Vikram Singh moves `ASSIGNED → IN_PROGRESS`. Switch to Ramesh Patel and attempt `IN_PROGRESS → RESOLVED`; verify HTTP 403 role violation. Vikram Singh submits resolution notes plus structured completion evidence (`IN_PROGRESS → RESOLVED`). Switch to Ramesh Patel on `/citizen` and confirm resolution (`RESOLVED → CLOSED`), recording `closed_at`.
 5. **Step 5 — Resolution Dispute & Supervisor Reassignment:** On another resolved ticket, citizen disputes resolution (`RESOLVED → REOPENED` with reason). Supervisor Rajesh Gupta on `/supervisor` inspects the case and reassigns it to Field Officer Sunita Rao (`REOPENED → ASSIGNED`). Sunita Rao accepts and executes work.
-6. **Step 6 — SLA Escalation Demo:** Inspect seeded overdue Complaint B (`REQ-2026-0006`). Advance simulated clock by 25 hours on `/supervisor` widget. Verify Amber `Level 1` escalation to Supervisor. Advance by 11 additional hours (36h total, 1.5x) to verify Red `Level 2` escalation to Municipal Head. Confirm zero duplicate audit events.
-7. **Step 7 — Read-Only Audit Chain & Tamper Detection:** Open `/audit` console. Verify all accepted and refused events are logged with SHA-256 hashes. Click "Verify Audit Chain" to show green chain verification. Run `python scripts/tamper_demo.py` against disposable database copy and show immediate red alert identifying the exact tampered row ID.
+6. **Step 6 — SLA Escalation Demo:** Inspect seeded zero-elapsed Complaint B (`REQ-2026-0006`). Advance simulated clock by 18 hours to show Amber `At Risk`, then 7 additional hours (25h total) for `Level 1` Supervisor escalation, then 11 additional hours (36h total, 1.5x) for Red `Level 2` Municipal Head escalation. Confirm zero duplicate audit events.
+7. **Step 7 — Read-Only Audit Chain & Tamper Detection:** Open `/audit` as Audit Inspector Meera Joshi (`USR-AUD-01`). Verify all accepted and refused events are logged with SHA-256 hashes and that this identity cannot call operational mutation endpoints. Click "Verify Audit Chain" to show green chain verification. Run `python scripts/tamper_demo.py` against a disposable database copy and show an immediate red alert identifying the exact tampered row ID.
 8. **Step 8 — Offline AI Fallback:** Unset Gemini API key; submit new complaint. Bundled scikit-learn TF-IDF classifier produces `local_fallback` suggestion without interruption.
 
 ---
@@ -123,4 +127,4 @@ The walkthrough uses named records so the happy path, dispute, and escalation pr
 
 1. **Tamper Demo Access:** Tampering is available only through a standalone script operating on a disposable database copy; no HTTP bypass endpoint is shipped.
 2. **External Hash Anchor:** External anchoring is outside the MVP. Documentation therefore states the tail-deletion limitation explicitly.
-3. **Interactive Runner:** `scripts/demo_walkthrough.py` automates the seven stages with named records and asserts the expected HTTP status and starting state before each action.
+3. **Interactive Runner:** `scripts/demo_walkthrough.py` automates all eight stages with named records and asserts the expected HTTP status and starting state before each action.

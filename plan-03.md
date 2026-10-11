@@ -15,7 +15,7 @@ The UI maintains strict multi-page separation with full page reloads, a shared g
   - `Officer Workspace (/officer)` — Impersonating Officer Anil Kumar (`USR-OFF-01`, Triage & Assignment)
   - `Field Officer Workspace (/field-officer)` — Impersonating Field Officer Vikram Singh (`USR-FLD-01`) or Sunita Rao (`USR-FLD-02`)
   - `Supervisor Command Center (/supervisor)` — Impersonating Supervisor Rajesh Gupta (`USR-SUP-01`)
-  - `Audit Inspector Console (/audit)` — Read-only verification and security log
+  - `Audit Inspector Console (/audit)` — Impersonating Audit Inspector Meera Joshi (`USR-AUD-01`), with read-only verification access
 - **Persona Indicator:** Persistent top bar widget showing the currently active persona, name, role badge, and department.
 
 ---
@@ -37,12 +37,13 @@ The UI maintains strict multi-page separation with full page reloads, a shared g
   - **Confirm Resolution:** Active when status is `RESOLVED`. Citizen confirms work, triggering `RESOLVED → CLOSED`.
   - **Dispute Resolution & Reopen:** Active when status is `RESOLVED`. Citizen provides a mandatory `reopen_reason`, triggering `RESOLVED → REOPENED` and initiating a new SLA cycle.
   - **Reopen Closed Complaint:** Active for `CLOSED` complaints within the 7-day post-closure window.
+  - **Appeal Rejection:** Active when status is `REJECTED`. Requires an `appeal_reason`, preserves the current state, and shows `Appeal Pending` until Supervisor review.
 - **Strict Invariants:** Citizens cannot assign cases, mark field work complete, or arbitrarily modify status.
 
 ### 3.2 Persona 2: Officer Workspace — Triage & Assignment (`/officer`)
 - **Intake & Triage Queue:**
   - Displays newly submitted complaints (`SUBMITTED`) and items awaiting review after citizen response (`ACKNOWLEDGED`).
-  - Displays complaint ID, category, location, citizen details permitted by system, and 2-hour triage SLA indicator.
+  - Displays complaint ID, category, location, citizen details permitted by system, and the separate 2-hour `triage_deadline` indicator. The indicator is complete after the first assignment/rejection outcome and pauses while the system is waiting in `NEEDS_INFO`.
   - **Review & Acknowledge:** `SUBMITTED → ACKNOWLEDGED`. Indicates formal receipt by municipal desk.
 - **Triage Actions:**
   - **Request Missing Info:** `ACKNOWLEDGED → NEEDS_INFO` with mandatory `info_request_note`. Pauses the SLA clock.
@@ -60,8 +61,8 @@ The UI maintains strict multi-page separation with full page reloads, a shared g
   - Displays Complaint ID, category, location, description, citizen evidence, assignment timestamp, SLA countdown, and escalation warnings (`Level 1`, `Level 2`).
 - **On-Ground Workflow Actions:**
   - **Start Work:** `ASSIGNED → IN_PROGRESS`. Acknowledges field execution start.
-  - **Add Progress Notes:** Allows recording incremental field updates.
-  - **Submit Resolution:** `IN_PROGRESS → RESOLVED`. Requires mandatory, non-empty `resolution_notes` and completion details.
+  - **Add Progress Notes:** Calls the versioned progress command with a mandatory note and optional structured evidence; state remains `IN_PROGRESS`.
+  - **Submit Resolution:** `IN_PROGRESS → RESOLVED`. Requires mandatory, non-empty `resolution_notes` and structured `resolution_evidence_json` containing at least one completion artifact or evidence reference.
 - **Feedback & Safeguards:**
   - Clear error feedback whenever an action is refused by the backend.
   - Prominent overdue and escalation alerts.
@@ -72,7 +73,7 @@ The UI maintains strict multi-page separation with full page reloads, a shared g
   - Comprehensive view across all municipal operations.
   - Review unassigned intake cases, acknowledged cases, and active assignments.
   - **Reassign Work:** Reassign eligible `ASSIGNED` or `IN_PROGRESS` cases to another Field Officer with mandatory recorded reason, preserving current state.
-  - **Approve Rejection Appeals:** Review citizen appeals for `REJECTED` tickets and approve transition: `REJECTED → ACKNOWLEDGED`.
+  - **Approve Rejection Appeals:** Review only `REJECTED` tickets with a stored Citizen appeal. Approval requires `appeal_approval_note` and transitions `REJECTED → ACKNOWLEDGED`.
   - **Reassign Reopened Cases:** Move `REOPENED → ASSIGNED` to a Field Officer.
 - **Overdue & Escalations Board:**
   - Real-time SLA monitoring:
@@ -89,6 +90,7 @@ The UI maintains strict multi-page separation with full page reloads, a shared g
 
 ### 3.5 Persona 5: Audit Inspector Console (`/audit`)
 - **Read-Only Verification Surface:**
+  - Uses seeded identity `USR-AUD-01` with database role `Audit Inspector`; it cannot access operational request mutations or municipal queues.
   - Append-only audit trail displaying `timestamp` (wall-clock UTC), `simulated_at`, `actor`, `actor_role`, `action`, `request_id`, `from_state`, `to_state`, `outcome` (`ACCEPTED` / `REFUSED`), `reason`, `details_json`, and SHA-256 `hash`.
   - Color-coded outcomes: Refused actions highlighted in red to demonstrate security policy enforcement.
 - **Interactive Inspection Tools:**
@@ -101,7 +103,7 @@ The UI maintains strict multi-page separation with full page reloads, a shared g
 
 ## 4. Implementation Deliverables
 1. `src/templates/base.html`: Shared government-service layout with 5-persona navigation and active persona banner.
-2. `src/templates/citizen.html`: Citizen complaint submission, tracking timeline, info response, and resolution confirmation.
+2. `src/templates/citizen.html`: Citizen complaint submission, tracking timeline, info response, rejection appeal, resolution confirmation, and time-limited closed reopening.
 3. `src/templates/officer.html`: Triage intake queue, Field Officer assignment, info requests, and AI advisory widget.
 4. `src/templates/field_officer.html`: On-ground execution queue, work start, progress notes, and resolution submission.
 5. `src/templates/supervisor.html`: Municipal overview, reassignment, appeal approvals, SLA escalations, and simulated clock.
@@ -118,4 +120,5 @@ The UI maintains strict multi-page separation with full page reloads, a shared g
 3. **Backend Enforcement:** Hiding buttons in the frontend is never relied upon; the backend enforces all permissions, ownership, and valid states.
 4. **Deterministic Closure:** Tickets in `RESOLVED` require citizen confirmation to close, preventing unilateral officer/supervisor closure.
 5. **Simulated Clock Control:** Fast-forwarding time triggers immediate backend SLA evaluation and persists across page reloads.
+6. **Complete UI-to-Command Mapping:** Missing-information responses, appeals, progress notes, resolution evidence, reassignments, and audit verification each map to a documented backend command; no button relies on an undocumented mutation.
 

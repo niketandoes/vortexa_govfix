@@ -19,9 +19,9 @@ Plan 01 lays the bedrock for **GovFix (Municipal Grievance Workflow Engine)**. I
 Represents verified municipal identities. Serves as the single server-side source of truth for role authorization.
 ```sql
 CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,               -- e.g. 'USR-CIT-01', 'USR-OFF-01', 'USR-FLD-01', 'USR-SUP-01'
+    id TEXT PRIMARY KEY,               -- e.g. 'USR-CIT-01', 'USR-OFF-01', 'USR-FLD-01', 'USR-SUP-01', 'USR-AUD-01'
     name TEXT NOT NULL,
-    role TEXT NOT NULL CHECK(role IN ('Citizen', 'Officer', 'Field Officer', 'Supervisor')),
+    role TEXT NOT NULL CHECK(role IN ('Citizen', 'Officer', 'Field Officer', 'Supervisor', 'Audit Inspector')),
     email TEXT UNIQUE NOT NULL,
     department TEXT,
     created_at TEXT NOT NULL             -- canonical UTC ISO-8601
@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS requests (
     citizen_id TEXT NOT NULL,
     title TEXT NOT NULL CHECK(length(trim(title)) > 0),
     text TEXT NOT NULL CHECK(length(trim(text)) > 0),
+    location TEXT NOT NULL CHECK(length(trim(location)) > 0),
     reported_category TEXT CHECK(reported_category IS NULL OR reported_category IN (
         'Water Leak', 'Garbage Collection', 'Streetlight', 'Pothole'
     )),                                  -- optional citizen-provided hint
@@ -48,8 +49,15 @@ CREATE TABLE IF NOT EXISTS requests (
         'REJECTED', 'REOPENED'
     )),
     assigned_to TEXT,                  -- foreign key to users(id) when role = 'Field Officer'
+    assigned_at TEXT,
     rejection_reason TEXT,
+    appeal_reason TEXT,
+    appealed_at TEXT,
+    appeal_approval_note TEXT,
     resolution_notes TEXT,
+    resolution_evidence_json TEXT CHECK(
+        resolution_evidence_json IS NULL OR json_valid(resolution_evidence_json)
+    ),                                  -- canonical JSON metadata/paths for completion evidence
     reopen_reason TEXT,
     info_request_note TEXT,            -- note from officer requesting missing info
     additional_info TEXT,              -- citizen-supplied additional info
@@ -62,6 +70,9 @@ CREATE TABLE IF NOT EXISTS requests (
     version INTEGER NOT NULL DEFAULT 1 CHECK(version >= 1),
     created_at TEXT NOT NULL,            -- simulated UTC ISO-8601 timestamp
     updated_at TEXT NOT NULL,
+    triage_deadline TEXT NOT NULL,        -- created_at + 2h + applicable pause extensions
+    triaged_at TEXT,                     -- set on first ASSIGNED or REJECTED outcome
+    closed_at TEXT,                      -- required to enforce the 7-day closed-reopen window
     deadline TEXT NOT NULL,              -- sla_started_at + SLA(category) + total_paused_seconds
     FOREIGN KEY(citizen_id) REFERENCES users(id),
     FOREIGN KEY(assigned_to) REFERENCES users(id)
@@ -91,7 +102,7 @@ CREATE TABLE IF NOT EXISTS audit (
     timestamp TEXT NOT NULL,             -- recorded wall-clock UTC time
     simulated_at TEXT,                   -- business time when relevant
     actor TEXT NOT NULL,               -- user ID or 'SYSTEM'
-    actor_role TEXT NOT NULL CHECK(actor_role IN ('Citizen', 'Officer', 'Field Officer', 'Supervisor', 'System')),
+    actor_role TEXT NOT NULL CHECK(actor_role IN ('Citizen', 'Officer', 'Field Officer', 'Supervisor', 'Audit Inspector', 'System')),
     action TEXT NOT NULL,              -- e.g. 'SUBMIT_COMPLAINT', 'TRANSITION', 'CONFIRM_CATEGORY', 'REASSIGN_REQUEST', 'ESCALATE'
     request_id TEXT NOT NULL,
     from_state TEXT,
@@ -152,7 +163,7 @@ Aligned with the municipal service guidelines:
 | `Pothole` | 72 | Damaged road surfaces requiring municipal repair |
 | `Uncategorised` | 72 | Default SLA before category is confirmed by officer |
 
-Additionally, an initial **2-hour triage & assignment target** applies to all newly submitted complaints.
+Additionally, an initial **2-hour triage & assignment target** applies to all newly submitted complaints. It is stored as `triage_deadline = created_at + 2 hours`, is satisfied when the request first reaches `ASSIGNED` or `REJECTED`, and is tracked separately from the category resolution deadline.
 
 ---
 
@@ -169,7 +180,7 @@ Pre-seeded identities to test all **five distinct personas** immediately without
 - **Persona 4 — Supervisor (Command Center):**
   - `USR-SUP-01`: "Supervisor Rajesh Gupta" (`rajesh.gupta@municipality.gov`) — Municipal Head
 - **Persona 5 — Audit Inspector Console (`/audit`):**
-  - Read-only audit verification surface accessible for inspection and live demo review.
+  - `USR-AUD-01`: "Audit Inspector Meera Joshi" (`meera.joshi@audit.gov`) — read-only audit verification identity.
 
 ### Pre-seeded Complaints:
 1. `REQ-2026-0001` (`SUBMITTED`): New pothole complaint awaiting Triage Officer review in `/officer` intake queue.
@@ -177,7 +188,7 @@ Pre-seeded identities to test all **five distinct personas** immediately without
 3. `REQ-2026-0003` (`ASSIGNED`): Garbage overflow assigned to `USR-FLD-01`, ready for `ASSIGNED → IN_PROGRESS`.
 4. `REQ-2026-0004` (`IN_PROGRESS`): Streetlight failure assigned to `USR-FLD-01`, ready for resolution notes.
 5. `REQ-2026-0005` (`RESOLVED`): Pothole repair completed, awaiting citizen confirmation in `/citizen`.
-6. `REQ-2026-0006` (`IN_PROGRESS`, Overdue Demo): 24-hour Water Leak seeded at 25h elapsed, triggering Level 1 Supervisor escalation for live judging.
+6. `REQ-2026-0006` (`IN_PROGRESS`, Escalation Demo): 24-hour Water Leak seeded at 0h elapsed at the reset reference time, allowing the demo to advance to 18h (At Risk), 25h (Level 1), and 36h (Level 2) deterministically.
 
 ---
 
@@ -194,10 +205,12 @@ Pre-seeded identities to test all **five distinct personas** immediately without
 ## 7. Confirmed Decisions & Implementation Notes
 1. **Data Access Layer:** Confirmed **Raw SQLite** via Python `sqlite3`/`aiosqlite` for direct, transparent control over triggers, transactions, and WAL mode without ORM overhead.
 2. **Identity Model:** The demo UI selects from the seeded personas and passes `X-Actor-ID`; the server resolves the role from `users` and never accepts a client-supplied role.
-3. **5 Explicit Personas:** Database roles strictly support `Citizen`, `Officer`, `Field Officer`, and `Supervisor` with dedicated workspaces and scoped access.
+3. **5 Explicit Personas:** Database roles strictly support `Citizen`, `Officer`, `Field Officer`, `Supervisor`, and read-only `Audit Inspector`, with dedicated workspaces and scoped access.
 4. **Database Security:** Enforced by SQLite `BEFORE UPDATE` and `BEFORE DELETE` triggers aborting any mutation on `audit`.
 5. **Categories:** 4 core municipal categories (`Water Leak` 24h, `Garbage Collection` 24h, `Streetlight` 48h, `Pothole` 72h) + `Uncategorised` (72h).
 6. **SLA Clock Pausing:** `paused_at` and `total_paused_seconds` columns pause the SLA clock during `NEEDS_INFO` and extend deadlines upon receipt of info.
 7. **Concurrency:** Every request mutation supplies `expected_version` and increments `version` in the same transaction as its audit entry.
 8. **Audit Details:** Action-specific values are stored as canonical JSON and protected by the hash chain.
+9. **Submission & Resolution Evidence:** `location` is mandatory at submission; `resolution_notes` and `resolution_evidence_json` are mandatory when moving to `RESOLVED`.
+10. **Appeals & Closed Reopening:** Rejected complaints store a Citizen appeal separately from Supervisor approval. `closed_at` is stored when a Citizen closes a resolved complaint and is the source of truth for the 7-day reopen window.
 
