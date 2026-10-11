@@ -196,3 +196,9 @@ class ClockState(GovFixModel):
         if info.data.get("is_frozen") and value is None:
             raise ValueError("frozen_at is required when the clock is frozen")
         return value
+
+
+class AdvisoryPreviewRequest(GovFixModel):
+    text: str = Field(min_length=1, max_length=10_000)
+    title: str | None = Field(default=None, max_length=200)
+

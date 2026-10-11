@@ -132,6 +132,7 @@ def seed_extended_users(
         """,
         extended,
     )
+    connection.commit()
 
 
 def seed_database(

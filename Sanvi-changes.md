@@ -96,3 +96,36 @@ This file tracks all actions, file modifications, and commands executed during o
 **Why it was done:** Addressed all Phase 1.5 frontend integration and specification audit checks, aligning the live backend engine and UI templates with Plan 03 contracts before proceeding to feature refinement.
 
 ---
+
+### Entry #8
+**Timestamp:** 2026-10-11 15:54:30
+
+**What was done:** Completed Phase 2: Citizen Portal Implementation (`/citizen`):
+1. src/models.py: Added AdvisoryPreviewRequest model contract.
+2. src/workflow.py:
+   - Added `(RequestState.CLOSED, RequestState.REOPENED)` transition rule restricted to citizen owner.
+   - Enforced 7-day post-closure window check (`REOPEN_WINDOW_EXPIRED` 422 refusal if > 7 days) and filtered permitted actions accordingly.
+   - Added owner-safe, sanitized event history retrieval method `get_request_history` querying accepted audit events without exposing cryptographic hashes or other citizen records.
+3. src/routes/requests.py:
+   - Added `GET /api/v1/requests/{request_id}/history` endpoint for citizen-safe audit timeline.
+   - Added `POST /api/v1/advisory/preview` non-blocking advisory preview endpoint using local heuristic AI classifier.
+4. src/seed.py: Added explicit `connection.commit()` to `seed_extended_users` preventing transaction lock issues in test fixtures.
+5. src/static/app.js:
+   - Added `getRequestHistory` and `getAdvisoryPreview` client API methods.
+   - Upgraded `transitionRequest` to flexibly accept both string state names and complete payload objects.
+   - Updated `formatSLARemaining` to handle `NEEDS_INFO` paused state, `RESOLVED`, `CLOSED`, and `REJECTED` states.
+   - Upgraded `statusBadge` with accessible text and distinct icon glyphs for all 9 supported states.
+6. src/templates/citizen.html:
+   - Complete high-polish municipal citizen portal following GovTech and design-taste guidelines.
+   - Overview metrics banner (Total, Active, Action Needed, Resolved/Closed).
+   - Validated complaint submission form with character counts, duplicate-click prevention, and live tracking ID success banner.
+   - Non-blocking real-time AI advisory preview with 1-click category and location cue applications.
+   - Registered complaints tracker with real-time keyword/ID search and status filtering across all 9 workflow states.
+   - Comprehensive Complaint Details modal with a 6-stage visual workflow stepper (`SUBMITTED -> ACKNOWLEDGED -> ASSIGNED -> IN_PROGRESS -> RESOLVED -> CLOSED`), exceptional branch banners (`NEEDS_INFO`, `REOPENED`, `REJECTED`), and immutable event history log.
+   - Action modals for providing missing info (`NEEDS_INFO -> ACKNOWLEDGED`), confirming resolution (`RESOLVED -> CLOSED`), disputing resolution (`RESOLVED -> REOPENED`), and reopening closed complaints within the 7-day window.
+7. tests/test_citizen_portal.py: Implemented 14 comprehensive automated test cases verifying complaint submission, field validation, persistence, citizen isolation, details & history, all 9 workflow states, missing info flow, resolution confirmation, dispute reopening, 7-day closure reopening window, refusal atomicity and auditing, error response contracts, and SLA calculations. (All 75 tests passing across entire repository).
+
+**Why it was done:** Fulfills all requirements of Phase 2: Complete Citizen Portal Implementation, delivering an end-to-end operational, fully-tested civic grievance interface integrated with the real GovFix backend workflow.
+
+---
+

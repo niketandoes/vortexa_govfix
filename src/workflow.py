@@ -82,6 +82,9 @@ TRANSITION_RULES: Mapping[tuple[RequestState, RequestState], TransitionRule] = (
             (RequestState.RESOLVED, RequestState.REOPENED): TransitionRule(
                 frozenset({UserRole.CITIZEN}), owner_required_for_citizen=True
             ),
+            (RequestState.CLOSED, RequestState.REOPENED): TransitionRule(
+                frozenset({UserRole.CITIZEN}), owner_required_for_citizen=True
+            ),
             (RequestState.REOPENED, RequestState.ASSIGNED): TransitionRule(
                 frozenset({UserRole.SUPERVISOR})
             ),
@@ -522,6 +525,21 @@ class WorkflowService:
                 if not command.reopen_reason:
                     self._missing_field(actor, request, command, "reopen_reason")
                 now = self._now()
+                if current is RequestState.CLOSED:
+                    closed_at = self._parse_time(request["updated_at"])
+                    if (now - closed_at).total_seconds() > 7 * 86400:
+                        self._refuse(
+                            actor_id=actor_id,
+                            actor_role=actor["role"],
+                            action=action,
+                            request_id=request_id,
+                            status_code=422,
+                            code="REOPEN_WINDOW_EXPIRED",
+                            message="Complaints cannot be reopened after 7 days of closure",
+                            current_state=current.value,
+                            requested_state=command.to_state.value,
+                            permitted_next_states=permitted,
+                        )
                 deadline = now + timedelta(hours=SLA_HOURS[Category(request["category"])])
                 updates.update(
                     {
@@ -806,6 +824,64 @@ class WorkflowService:
             )
         return self._serialize_request(request, actor)
 
+    def get_request_history(
+        self, *, request_id: str, actor_id: str
+    ) -> list[dict[str, Any]]:
+        actor = self._actor(actor_id)
+        if actor is None:
+            raise WorkflowError(
+                status_code=401,
+                code="ACTOR_NOT_FOUND",
+                message="Actor does not exist",
+            )
+        request = self._request(request_id)
+        if request is None:
+            raise WorkflowError(
+                status_code=404,
+                code="REQUEST_NOT_FOUND",
+                message="Request does not exist",
+                actor_role=actor["role"],
+            )
+        if not self._can_read(actor, request):
+            raise WorkflowError(
+                status_code=403,
+                code="READ_NOT_PERMITTED",
+                message="Actor may not read this request",
+                current_state=request["state"],
+                actor_role=actor["role"],
+            )
+        rows = self.connection.execute(
+            """
+            SELECT id, timestamp, simulated_at, actor_role, action, from_state, to_state, reason, details_json
+            FROM audit
+            WHERE request_id = ? AND outcome = 'ACCEPTED'
+            ORDER BY id ASC
+            """,
+            (request_id,),
+        ).fetchall()
+        import json
+        events = []
+        for row in rows:
+            details = {}
+            if row["details_json"]:
+                try:
+                    details = json.loads(row["details_json"])
+                except Exception:
+                    details = {}
+            events.append(
+                {
+                    "id": row["id"],
+                    "timestamp": row["simulated_at"] or row["timestamp"],
+                    "actor_role": row["actor_role"],
+                    "action": row["action"],
+                    "from_state": row["from_state"],
+                    "to_state": row["to_state"],
+                    "reason": row["reason"],
+                    "details": details,
+                }
+            )
+        return events
+
     def list_requests(
         self,
         *,
@@ -944,6 +1020,10 @@ class WorkflowService:
                     continue
             if rule.assigned_officer_required and request["assigned_to"] != actor["id"]:
                 continue
+            if source is RequestState.CLOSED and target is RequestState.REOPENED:
+                closed_at = self._parse_time(request["updated_at"])
+                if (self._now() - closed_at).total_seconds() > 7 * 86400:
+                    continue
             actions.append(f"TRANSITION:{target.value}")
         if state in ACTIVE_STATES and role in {UserRole.OFFICER, UserRole.SUPERVISOR}:
             actions.append("CONFIRM_CATEGORY")

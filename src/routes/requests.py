@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Header, Query
 
 from src.database import connect
 from src.models import (
+    AdvisoryPreviewRequest,
     Category,
     CategoryCommand,
     ReassignCommand,
@@ -17,6 +18,7 @@ from src.models import (
     RequestState,
     TransitionCommand,
 )
+from src.ai.local_classifier import LocalClassifier
 from src.workflow import WorkflowService
 
 
@@ -98,6 +100,26 @@ def get_request(
         request_id=request_id, actor_id=actor_id
     )
     return {"success": True, "data": data}
+
+
+@router.get("/requests/{request_id}/history")
+def get_request_history(
+    request_id: str, connection: Connection, actor_id: ActorId
+) -> dict:
+    data = WorkflowService(connection).get_request_history(
+        request_id=request_id, actor_id=actor_id
+    )
+    return {"success": True, "data": data}
+
+
+@router.post("/advisory/preview")
+def preview_advisory(
+    command: AdvisoryPreviewRequest, actor_id: ActorId
+) -> dict:
+    engine = LocalClassifier()
+    full_text = f"{command.title or ''} {command.text}".strip()
+    suggestion = engine.suggest(full_text)
+    return {"success": True, "data": suggestion.model_dump()}
 
 
 @router.get("/requests")

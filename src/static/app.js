@@ -112,10 +112,30 @@ const GovFix = (function () {
     });
   }
 
-  async function transitionRequest(requestId, payload) {
+  async function transitionRequest(requestId, toStateOrPayload, extraDetails = {}) {
+    let payload;
+    if (typeof toStateOrPayload === "string") {
+      payload = {
+        to_state: toStateOrPayload,
+        ...extraDetails,
+      };
+    } else {
+      payload = toStateOrPayload;
+    }
     return apiRequest(`/api/v1/requests/${requestId}/transition`, {
       method: "POST",
       body: JSON.stringify(payload),
+    });
+  }
+
+  async function getRequestHistory(requestId) {
+    return apiRequest(`/api/v1/requests/${requestId}/history`);
+  }
+
+  async function getAdvisoryPreview(text, title = "") {
+    return apiRequest("/api/v1/advisory/preview", {
+      method: "POST",
+      body: JSON.stringify({ text, title }),
     });
   }
 
@@ -196,7 +216,31 @@ const GovFix = (function () {
     return `${diffDays}d ago`;
   }
 
-  function formatSLARemaining(deadlineIso, isOverdue) {
+  function formatSLARemaining(deadlineIso, isOverdue, state = null) {
+    if (state === "NEEDS_INFO") {
+      return {
+        text: "SLA Paused (Awaiting Info)",
+        class: "bg-amber-100 text-amber-900 border-amber-300 font-semibold",
+      };
+    }
+    if (state === "RESOLVED") {
+      return {
+        text: "Resolved (Pending Citizen Confirmation)",
+        class: "bg-emerald-50 text-emerald-800 border-emerald-200 font-medium",
+      };
+    }
+    if (state === "CLOSED") {
+      return {
+        text: "Closed",
+        class: "bg-slate-100 text-slate-700 border-slate-300",
+      };
+    }
+    if (state === "REJECTED") {
+      return {
+        text: "Rejected",
+        class: "bg-red-50 text-red-800 border-red-200",
+      };
+    }
     if (!deadlineIso) return { text: "No SLA", class: "bg-slate-100 text-slate-600" };
     const now = new Date();
     const deadline = new Date(deadlineIso);
@@ -226,18 +270,18 @@ const GovFix = (function () {
 
   function statusBadge(state) {
     const map = {
-      SUBMITTED: { label: "Submitted", class: "bg-blue-50 text-blue-700 border-blue-200" },
-      ACKNOWLEDGED: { label: "Under Review", class: "bg-indigo-50 text-indigo-700 border-indigo-200" },
-      NEEDS_INFO: { label: "Needs Info", class: "bg-amber-50 text-amber-700 border-amber-200" },
-      ASSIGNED: { label: "Assigned", class: "bg-purple-50 text-purple-700 border-purple-200" },
-      IN_PROGRESS: { label: "In Progress", class: "bg-orange-50 text-orange-700 border-orange-200" },
-      RESOLVED: { label: "Resolved", class: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-      CLOSED: { label: "Closed", class: "bg-slate-100 text-slate-700 border-slate-300" },
-      REOPENED: { label: "Disputed / Reopened", class: "bg-rose-50 text-rose-700 border-rose-200" },
-      REJECTED: { label: "Rejected", class: "bg-red-50 text-red-700 border-red-200" },
+      SUBMITTED: { label: "Submitted", icon: "●", class: "bg-blue-50 text-blue-700 border-blue-200" },
+      ACKNOWLEDGED: { label: "Under Review", icon: "⏳", class: "bg-indigo-50 text-indigo-700 border-indigo-200" },
+      NEEDS_INFO: { label: "Needs Info", icon: "⚠️", class: "bg-amber-50 text-amber-800 border-amber-300 font-semibold" },
+      ASSIGNED: { label: "Assigned", icon: "👤", class: "bg-purple-50 text-purple-700 border-purple-200" },
+      IN_PROGRESS: { label: "In Progress", icon: "⚙️", class: "bg-orange-50 text-orange-700 border-orange-200" },
+      RESOLVED: { label: "Resolved", icon: "✓", class: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+      CLOSED: { label: "Closed", icon: "🔒", class: "bg-slate-100 text-slate-700 border-slate-300" },
+      REOPENED: { label: "Disputed / Reopened", icon: "🔄", class: "bg-rose-50 text-rose-700 border-rose-200" },
+      REJECTED: { label: "Rejected", icon: "✕", class: "bg-red-50 text-red-700 border-red-200" },
     };
-    const conf = map[state] || { label: state, class: "bg-slate-50 text-slate-700 border-slate-200" };
-    return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${conf.class}">${conf.label}</span>`;
+    const conf = map[state] || { label: state, icon: "●", class: "bg-slate-50 text-slate-700 border-slate-200" };
+    return `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium border ${conf.class}"><span class="text-[10px] font-bold" aria-hidden="true">${conf.icon}</span><span>${conf.label}</span></span>`;
   }
 
   function categoryBadge(category) {
@@ -396,6 +440,8 @@ const GovFix = (function () {
     getPersona,
     listRequests,
     getRequest,
+    getRequestHistory,
+    getAdvisoryPreview,
     createRequest,
     transitionRequest,
     confirmCategory,
