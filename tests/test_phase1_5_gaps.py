@@ -194,6 +194,7 @@ def test_assigned_field_officer_lifecycle_to_resolution(workflow_setup) -> None:
         command=TransitionCommand(
             to_state=RequestState.RESOLVED,
             resolution_notes="Replaced leaking valve and pressurized supply line.",
+            resolution_evidence_json={"work_order": "WO-4411", "photos": ["evidence://repaired.jpg"]},
             expected_version=4,
         ),
     )

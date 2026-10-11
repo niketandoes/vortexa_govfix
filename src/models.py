@@ -34,6 +34,15 @@ class Category(StrEnum):
     UNCATEGORISED = "Uncategorised"
 
 
+SLA_HOURS: dict[Category, int] = {
+    Category.WATER_LEAK: 24,
+    Category.GARBAGE_COLLECTION: 24,
+    Category.STREETLIGHT: 48,
+    Category.POTHOLE: 72,
+    Category.UNCATEGORISED: 72,
+}
+
+
 class RequestState(StrEnum):
     SUBMITTED = "SUBMITTED"
     ACKNOWLEDGED = "ACKNOWLEDGED"
@@ -86,7 +95,7 @@ class UserCreate(GovFixModel):
 class RequestCreate(GovFixModel):
     title: str = Field(min_length=1, max_length=200)
     text: str = Field(min_length=1, max_length=10_000)
-    location: str | None = Field(default=None, max_length=500)
+    location: str = Field(default="Municipal Area", min_length=1, max_length=500)
     reported_category: Category | None = None
 
     @field_validator("reported_category")
@@ -104,24 +113,33 @@ class RequestRecord(GovFixModel):
     citizen_id: str
     title: str
     text: str
-    location: str | None = None
-    reported_category: Category | None
+    location: str
+    reported_category: Category | None = None
     category: Category
     state: RequestState
-    assigned_to: str | None
-    rejection_reason: str | None
-    resolution_notes: str | None
+    assigned_to: str | None = None
+    assigned_at: datetime | None = None
+    rejection_reason: str | None = None
+    appeal_reason: str | None = None
+    appealed_at: datetime | None = None
+    appeal_approval_note: str | None = None
+    resolution_notes: str | None = None
+    resolution_evidence_json: dict[str, Any] | None = None
+    reopen_reason: str | None = None
     info_request_note: str | None = None
     additional_info: str | None = None
-    paused_at: datetime | None = None
-    total_paused_seconds: int = 0
     escalation_level: int = Field(ge=0, le=2)
     sla_started_at: datetime
     sla_cycle: int = Field(ge=1)
     reopen_count: int = Field(ge=0)
+    paused_at: datetime | None = None
+    total_paused_seconds: int = Field(default=0, ge=0)
     version: int = Field(ge=1)
     created_at: datetime
     updated_at: datetime
+    triage_deadline: datetime
+    triaged_at: datetime | None = None
+    closed_at: datetime | None = None
     deadline: datetime
 
 
@@ -132,11 +150,22 @@ class VersionedCommand(GovFixModel):
 class TransitionCommand(VersionedCommand):
     to_state: RequestState
     assigned_to: str | None = None
-    rejection_reason: str | None = None
-    resolution_notes: str | None = None
-    reopen_reason: str | None = None
     info_request_note: str | None = None
     additional_info: str | None = None
+    rejection_reason: str | None = None
+    appeal_approval_note: str | None = None
+    resolution_notes: str | None = None
+    resolution_evidence_json: dict[str, Any] | None = None
+    reopen_reason: str | None = None
+
+
+class AppealCommand(VersionedCommand):
+    appeal_reason: str = Field(min_length=1)
+
+
+class ProgressCommand(VersionedCommand):
+    note: str = Field(min_length=1)
+    evidence_json: dict[str, Any] | None = None
 
 
 class CategoryCommand(VersionedCommand):

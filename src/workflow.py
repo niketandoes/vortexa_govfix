@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -9,15 +11,17 @@ from types import MappingProxyType
 from typing import Any, Callable, Mapping
 
 from src.models import (
+    AppealCommand,
     Category,
     CategoryCommand,
+    ProgressCommand,
     ReassignCommand,
     RequestCreate,
     RequestState,
     TransitionCommand,
     UserRole,
 )
-from src.services.audit_service import append_audit, utc_iso
+from src.services.audit_service import GENESIS_HASH, append_audit, canonical_json, utc_iso
 
 
 ACTIVE_STATES = frozenset(
@@ -34,9 +38,9 @@ ACTIVE_STATES = frozenset(
 SLA_HOURS: Mapping[Category, int] = MappingProxyType(
     {
         Category.WATER_LEAK: 24,
-        Category.GARBAGE_COLLECTION: 48,
-        Category.STREETLIGHT: 72,
-        Category.POTHOLE: 168,
+        Category.GARBAGE_COLLECTION: 24,
+        Category.STREETLIGHT: 48,
+        Category.POTHOLE: 72,
         Category.UNCATEGORISED: 72,
     }
 )
@@ -65,29 +69,29 @@ TRANSITION_RULES: Mapping[tuple[RequestState, RequestState], TransitionRule] = (
                 frozenset({UserRole.OFFICER, UserRole.SUPERVISOR})
             ),
             (RequestState.ACKNOWLEDGED, RequestState.REJECTED): TransitionRule(
+                frozenset({UserRole.OFFICER, UserRole.SUPERVISOR})
+            ),
+            (RequestState.REJECTED, RequestState.ACKNOWLEDGED): TransitionRule(
                 frozenset({UserRole.SUPERVISOR})
             ),
             (RequestState.ASSIGNED, RequestState.IN_PROGRESS): TransitionRule(
-                frozenset({UserRole.OFFICER, UserRole.FIELD_OFFICER}),
-                assigned_officer_required=True,
+                frozenset({UserRole.FIELD_OFFICER}), assigned_officer_required=True
             ),
             (RequestState.IN_PROGRESS, RequestState.RESOLVED): TransitionRule(
-                frozenset({UserRole.OFFICER, UserRole.FIELD_OFFICER}),
-                assigned_officer_required=True,
+                frozenset({UserRole.FIELD_OFFICER}), assigned_officer_required=True
             ),
             (RequestState.RESOLVED, RequestState.CLOSED): TransitionRule(
-                frozenset({UserRole.CITIZEN, UserRole.SUPERVISOR}),
+                frozenset({UserRole.CITIZEN}),
                 owner_required_for_citizen=True,
             ),
             (RequestState.RESOLVED, RequestState.REOPENED): TransitionRule(
                 frozenset({UserRole.CITIZEN}), owner_required_for_citizen=True
             ),
+            (RequestState.CLOSED, RequestState.REOPENED): TransitionRule(
+                frozenset({UserRole.CITIZEN}), owner_required_for_citizen=True
+            ),
             (RequestState.REOPENED, RequestState.ASSIGNED): TransitionRule(
                 frozenset({UserRole.SUPERVISOR})
-            ),
-            (RequestState.REOPENED, RequestState.IN_PROGRESS): TransitionRule(
-                frozenset({UserRole.OFFICER, UserRole.FIELD_OFFICER}),
-                assigned_officer_required=True,
             ),
         }
     )
@@ -312,13 +316,14 @@ class WorkflowService:
                 )
 
             now = self._now()
+            triage_deadline = now + timedelta(hours=2)
             deadline = now + timedelta(hours=SLA_HOURS[Category.UNCATEGORISED])
             self.connection.execute(
                 """
                 INSERT INTO requests (
                     id, citizen_id, title, text, location, reported_category, category,
-                    state, sla_started_at, created_at, updated_at, deadline
-                ) VALUES (?, ?, ?, ?, ?, ?, 'Uncategorised', 'SUBMITTED', ?, ?, ?, ?)
+                    state, sla_started_at, created_at, updated_at, triage_deadline, deadline
+                ) VALUES (?, ?, ?, ?, ?, ?, 'Uncategorised', 'SUBMITTED', ?, ?, ?, ?, ?)
                 """,
                 (
                     request_id,
@@ -332,6 +337,7 @@ class WorkflowService:
                     utc_iso(now),
                     utc_iso(now),
                     utc_iso(now),
+                    utc_iso(triage_deadline),
                     utc_iso(deadline),
                 ),
             )
@@ -350,6 +356,7 @@ class WorkflowService:
                     if command.reported_category
                     else None,
                     "confirmed_category": Category.UNCATEGORISED.value,
+                    "triage_deadline": utc_iso(triage_deadline),
                     "deadline": utc_iso(deadline),
                     "version": 1,
                 },
@@ -441,22 +448,60 @@ class WorkflowService:
                     request_id=request_id,
                     status_code=403,
                     code="ASSIGNMENT_REQUIRED",
-                    message="Officer is not assigned to this request",
+                    message="Field Officer is not assigned to this request",
                     current_state=current.value,
                     requested_state=command.to_state.value,
                     permitted_next_states=permitted,
                 )
 
+            now = self._now()
             updates: dict[str, Any] = {"state": command.to_state.value}
             details: dict[str, Any] = {
                 "old_version": request["version"],
                 "new_version": request["version"] + 1,
             }
-            if command.to_state is RequestState.ASSIGNED:
+            if command.to_state is RequestState.NEEDS_INFO:
+                info_note = command.info_request_note or command.rejection_reason
+                if not info_note:
+                    self._missing_field(actor, request, command, "info_request_note")
+                updates["info_request_note"] = info_note
+                updates["paused_at"] = utc_iso(now)
+                details["info_request_note"] = info_note
+                details["paused_at"] = utc_iso(now)
+            elif current is RequestState.NEEDS_INFO and command.to_state is RequestState.ACKNOWLEDGED:
+                if not command.additional_info:
+                    self._missing_field(actor, request, command, "additional_info")
+                paused_at_dt = (
+                    self._parse_time(request["paused_at"])
+                    if request["paused_at"]
+                    else now
+                )
+                paused_seconds = max(0, int((now - paused_at_dt).total_seconds()))
+                total_paused = (request["total_paused_seconds"] or 0) + paused_seconds
+                paused_delta = timedelta(seconds=paused_seconds)
+                new_deadline = self._parse_time(request["deadline"]) + paused_delta
+                updates["additional_info"] = command.additional_info
+                updates["paused_at"] = None
+                updates["total_paused_seconds"] = total_paused
+                updates["deadline"] = utc_iso(new_deadline)
+                if request["triaged_at"] is None:
+                    new_triage = self._parse_time(request["triage_deadline"]) + paused_delta
+                    updates["triage_deadline"] = utc_iso(new_triage)
+                    details["new_triage_deadline"] = utc_iso(new_triage)
+                details.update(
+                    {
+                        "additional_info": command.additional_info,
+                        "paused_seconds": paused_seconds,
+                        "total_paused_seconds": total_paused,
+                        "old_deadline": request["deadline"],
+                        "new_deadline": utc_iso(new_deadline),
+                    }
+                )
+            elif command.to_state is RequestState.ASSIGNED:
                 if not command.assigned_to:
                     self._missing_field(actor, request, command, "assigned_to")
                 assignee = self._actor(command.assigned_to)
-                if assignee is None or assignee["role"] not in (UserRole.OFFICER.value, UserRole.FIELD_OFFICER.value):
+                if assignee is None or assignee["role"] != UserRole.FIELD_OFFICER.value:
                     self._refuse(
                         actor_id=actor_id,
                         actor_role=actor["role"],
@@ -464,72 +509,90 @@ class WorkflowService:
                         request_id=request_id,
                         status_code=422,
                         code="INVALID_ASSIGNEE",
-                        message="assigned_to must identify an Officer or Field Officer",
+                        message="assigned_to must identify a Field Officer",
                         current_state=current.value,
                         requested_state=command.to_state.value,
                         permitted_next_states=permitted,
                     )
                 updates["assigned_to"] = assignee["id"]
+                updates["assigned_at"] = utc_iso(now)
                 details["assigned_to"] = assignee["id"]
-            elif command.to_state is RequestState.NEEDS_INFO:
-                info_note = command.info_request_note or command.rejection_reason
-                if not info_note:
-                    self._missing_field(actor, request, command, "info_request_note")
-                now = self._now()
-                updates["info_request_note"] = info_note
-                updates["paused_at"] = utc_iso(now)
-                details["info_request_note"] = info_note
-                details["paused_at"] = utc_iso(now)
-            elif command.to_state is RequestState.ACKNOWLEDGED and current is RequestState.NEEDS_INFO:
-                additional_info = command.additional_info
-                if not additional_info:
-                    self._missing_field(actor, request, command, "additional_info")
-                now = self._now()
-                paused_seconds = 0
-                if request["paused_at"]:
-                    paused_seconds = max(0, int((now - self._parse_time(request["paused_at"])).total_seconds()))
-                old_deadline = self._parse_time(request["deadline"])
-                new_deadline = old_deadline + timedelta(seconds=paused_seconds)
-                new_total_paused = (request["total_paused_seconds"] or 0) + paused_seconds
-                updates.update(
-                    {
-                        "additional_info": additional_info,
-                        "paused_at": None,
-                        "total_paused_seconds": new_total_paused,
-                        "deadline": utc_iso(new_deadline),
-                    }
-                )
-                details.update(
-                    {
-                        "additional_info": additional_info,
-                        "paused_seconds": paused_seconds,
-                        "total_paused_seconds": new_total_paused,
-                        "old_deadline": request["deadline"],
-                        "new_deadline": utc_iso(new_deadline),
-                    }
-                )
+                details["assigned_at"] = utc_iso(now)
+                if request["triaged_at"] is None:
+                    updates["triaged_at"] = utc_iso(now)
+                    details["triaged_at"] = utc_iso(now)
             elif command.to_state is RequestState.REJECTED:
                 if not command.rejection_reason:
                     self._missing_field(actor, request, command, "rejection_reason")
                 updates["rejection_reason"] = command.rejection_reason
                 details["rejection_reason"] = command.rejection_reason
+                if request["triaged_at"] is None:
+                    updates["triaged_at"] = utc_iso(now)
+                    details["triaged_at"] = utc_iso(now)
+                updates["appeal_reason"] = None
+                updates["appealed_at"] = None
+                updates["appeal_approval_note"] = None
+            elif current is RequestState.REJECTED and command.to_state is RequestState.ACKNOWLEDGED:
+                if not request["appeal_reason"] or not request["appealed_at"]:
+                    self._refuse(
+                        actor_id=actor_id,
+                        actor_role=actor["role"],
+                        action=action,
+                        request_id=request_id,
+                        status_code=422,
+                        code="APPEAL_REQUIRED",
+                        message="Cannot approve appeal without a pending Citizen appeal",
+                        current_state=current.value,
+                        requested_state=command.to_state.value,
+                        permitted_next_states=permitted,
+                    )
+                if not command.appeal_approval_note:
+                    self._missing_field(actor, request, command, "appeal_approval_note")
+                updates["appeal_approval_note"] = command.appeal_approval_note
+                details["appeal_approval_note"] = command.appeal_approval_note
             elif command.to_state is RequestState.RESOLVED:
                 if not command.resolution_notes:
                     self._missing_field(actor, request, command, "resolution_notes")
+                if not command.resolution_evidence_json:
+                    self._missing_field(actor, request, command, "resolution_evidence_json")
                 updates["resolution_notes"] = command.resolution_notes
+                updates["resolution_evidence_json"] = canonical_json(command.resolution_evidence_json)
                 details["resolution_notes"] = command.resolution_notes
+                details["resolution_evidence_json"] = command.resolution_evidence_json
+            elif command.to_state is RequestState.CLOSED:
+                updates["closed_at"] = utc_iso(now)
+                details["closed_at"] = utc_iso(now)
             elif command.to_state is RequestState.REOPENED:
                 if not command.reopen_reason:
                     self._missing_field(actor, request, command, "reopen_reason")
-                now = self._now()
+                if current is RequestState.CLOSED:
+                    closed_at_str = request["closed_at"] or request["updated_at"]
+                    closed_at_dt = self._parse_time(closed_at_str)
+                    if now > closed_at_dt + timedelta(days=7):
+                        self._refuse(
+                            actor_id=actor_id,
+                            actor_role=actor["role"],
+                            action=action,
+                            request_id=request_id,
+                            status_code=422,
+                            code="REOPEN_WINDOW_EXPIRED",
+                            message="Cannot reopen request: 7-day post-closure window has expired",
+                            current_state=current.value,
+                            requested_state=command.to_state.value,
+                            permitted_next_states=permitted,
+                        )
                 deadline = now + timedelta(hours=SLA_HOURS[Category(request["category"])])
                 updates.update(
                     {
+                        "reopen_reason": command.reopen_reason,
                         "sla_started_at": utc_iso(now),
                         "deadline": utc_iso(deadline),
                         "sla_cycle": request["sla_cycle"] + 1,
                         "reopen_count": request["reopen_count"] + 1,
                         "escalation_level": 0,
+                        "paused_at": None,
+                        "total_paused_seconds": 0,
+                        "closed_at": None,
                     }
                 )
                 details.update(
@@ -642,7 +705,8 @@ class WorkflowService:
                 action=action,
             )
             start = self._parse_time(request["sla_started_at"])
-            deadline = start + timedelta(hours=SLA_HOURS[command.category])
+            paused = timedelta(seconds=request["total_paused_seconds"] or 0)
+            deadline = start + timedelta(hours=SLA_HOURS[command.category]) + paused
             now = self._now()
             self.connection.execute(
                 """
@@ -723,7 +787,7 @@ class WorkflowService:
                     current_state=request["state"],
                 )
             assignee = self._actor(command.assigned_to)
-            if assignee is None or assignee["role"] not in (UserRole.OFFICER.value, UserRole.FIELD_OFFICER.value):
+            if assignee is None or assignee["role"] != UserRole.FIELD_OFFICER.value:
                 self._refuse(
                     actor_id=actor_id,
                     actor_role=actor["role"],
@@ -731,7 +795,7 @@ class WorkflowService:
                     request_id=request_id,
                     status_code=422,
                     code="INVALID_ASSIGNEE",
-                    message="assigned_to must identify an Officer or Field Officer",
+                    message="assigned_to must identify a Field Officer",
                     current_state=request["state"],
                 )
             self._check_version(
@@ -744,11 +808,12 @@ class WorkflowService:
             self.connection.execute(
                 """
                 UPDATE requests
-                SET assigned_to = ?, updated_at = ?, version = version + 1
+                SET assigned_to = ?, assigned_at = ?, updated_at = ?, version = version + 1
                 WHERE id = ? AND version = ?
                 """,
                 (
                     assignee["id"],
+                    utc_iso(now),
                     utc_iso(now),
                     request_id,
                     command.expected_version,
@@ -780,6 +845,180 @@ class WorkflowService:
             self.connection.rollback()
             raise
 
+    def submit_appeal(
+        self, *, request_id: str, actor_id: str, command: AppealCommand
+    ) -> dict[str, Any]:
+        self._begin()
+        try:
+            action = "SUBMIT_APPEAL"
+            actor = self._require_actor(actor_id, action=action, request_id=request_id)
+            request = self._require_request(request_id, actor=actor, action=action)
+            if actor["role"] != UserRole.CITIZEN.value:
+                self._refuse(
+                    actor_id=actor_id,
+                    actor_role=actor["role"],
+                    action=action,
+                    request_id=request_id,
+                    status_code=403,
+                    code="ROLE_NOT_PERMITTED",
+                    message="Only Citizens may submit appeals",
+                    current_state=request["state"],
+                )
+            if request["citizen_id"] != actor_id:
+                self._refuse(
+                    actor_id=actor_id,
+                    actor_role=actor["role"],
+                    action=action,
+                    request_id=request_id,
+                    status_code=403,
+                    code="OWNERSHIP_REQUIRED",
+                    message="Citizen does not own this request",
+                    current_state=request["state"],
+                )
+            if request["state"] != RequestState.REJECTED.value:
+                self._refuse(
+                    actor_id=actor_id,
+                    actor_role=actor["role"],
+                    action=action,
+                    request_id=request_id,
+                    status_code=422,
+                    code="INVALID_STATE_FOR_APPEAL",
+                    message="Appeals may only be submitted for REJECTED requests",
+                    current_state=request["state"],
+                )
+            self._check_version(
+                actor=actor,
+                request=request,
+                expected_version=command.expected_version,
+                action=action,
+            )
+            now = self._now()
+            self.connection.execute(
+                """
+                UPDATE requests
+                SET appeal_reason = ?, appealed_at = ?, updated_at = ?, version = version + 1
+                WHERE id = ? AND version = ?
+                """,
+                (
+                    command.appeal_reason,
+                    utc_iso(now),
+                    utc_iso(now),
+                    request_id,
+                    command.expected_version,
+                ),
+            )
+            append_audit(
+                self.connection,
+                actor=actor_id,
+                actor_role=actor["role"],
+                action=action,
+                request_id=request_id,
+                from_state=request["state"],
+                to_state=request["state"],
+                outcome="ACCEPTED",
+                reason="Citizen submitted rejection appeal",
+                details={
+                    "appeal_reason": command.appeal_reason,
+                    "appealed_at": utc_iso(now),
+                    "old_version": request["version"],
+                    "new_version": request["version"] + 1,
+                },
+                simulated_at=now,
+            )
+            self.connection.commit()
+            return self._serialize_request(self._request(request_id), actor)
+        except WorkflowError:
+            raise
+        except Exception:
+            self.connection.rollback()
+            raise
+
+    def add_progress(
+        self, *, request_id: str, actor_id: str, command: ProgressCommand
+    ) -> dict[str, Any]:
+        self._begin()
+        try:
+            action = "ADD_PROGRESS_UPDATE"
+            actor = self._require_actor(actor_id, action=action, request_id=request_id)
+            request = self._require_request(request_id, actor=actor, action=action)
+            if actor["role"] != UserRole.FIELD_OFFICER.value:
+                self._refuse(
+                    actor_id=actor_id,
+                    actor_role=actor["role"],
+                    action=action,
+                    request_id=request_id,
+                    status_code=403,
+                    code="ROLE_NOT_PERMITTED",
+                    message="Only Field Officers may add progress updates",
+                    current_state=request["state"],
+                )
+            if request["assigned_to"] != actor_id:
+                self._refuse(
+                    actor_id=actor_id,
+                    actor_role=actor["role"],
+                    action=action,
+                    request_id=request_id,
+                    status_code=403,
+                    code="ASSIGNMENT_REQUIRED",
+                    message="Field Officer is not assigned to this request",
+                    current_state=request["state"],
+                )
+            if request["state"] != RequestState.IN_PROGRESS.value:
+                self._refuse(
+                    actor_id=actor_id,
+                    actor_role=actor["role"],
+                    action=action,
+                    request_id=request_id,
+                    status_code=422,
+                    code="INVALID_STATE_FOR_PROGRESS",
+                    message="Progress updates may only be added while IN_PROGRESS",
+                    current_state=request["state"],
+                )
+            self._check_version(
+                actor=actor,
+                request=request,
+                expected_version=command.expected_version,
+                action=action,
+            )
+            now = self._now()
+            self.connection.execute(
+                """
+                UPDATE requests
+                SET updated_at = ?, version = version + 1
+                WHERE id = ? AND version = ?
+                """,
+                (
+                    utc_iso(now),
+                    request_id,
+                    command.expected_version,
+                ),
+            )
+            append_audit(
+                self.connection,
+                actor=actor_id,
+                actor_role=actor["role"],
+                action=action,
+                request_id=request_id,
+                from_state=request["state"],
+                to_state=request["state"],
+                outcome="ACCEPTED",
+                reason=command.note,
+                details={
+                    "note": command.note,
+                    "evidence_json": command.evidence_json,
+                    "old_version": request["version"],
+                    "new_version": request["version"] + 1,
+                },
+                simulated_at=now,
+            )
+            self.connection.commit()
+            return self._serialize_request(self._request(request_id), actor)
+        except WorkflowError:
+            raise
+        except Exception:
+            self.connection.rollback()
+            raise
+
     def get_request(self, *, request_id: str, actor_id: str) -> dict[str, Any]:
         actor = self._actor(actor_id)
         if actor is None:
@@ -787,6 +1026,13 @@ class WorkflowService:
                 status_code=401,
                 code="ACTOR_NOT_FOUND",
                 message="Actor does not exist",
+            )
+        if actor["role"] == UserRole.AUDIT_INSPECTOR.value:
+            raise WorkflowError(
+                status_code=403,
+                code="ROLE_NOT_PERMITTED",
+                message="Audit Inspector cannot access operational requests",
+                actor_role=actor["role"],
             )
         request = self._request(request_id)
         if request is None:
@@ -823,6 +1069,13 @@ class WorkflowService:
                 code="ACTOR_NOT_FOUND",
                 message="Actor does not exist",
             )
+        if actor["role"] == UserRole.AUDIT_INSPECTOR.value:
+            raise WorkflowError(
+                status_code=403,
+                code="ROLE_NOT_PERMITTED",
+                message="Audit Inspector cannot access operational requests",
+                actor_role=actor["role"],
+            )
         clauses: list[str] = []
         values: list[Any] = []
         if actor["role"] == UserRole.CITIZEN.value:
@@ -832,8 +1085,7 @@ class WorkflowService:
             clauses.append("assigned_to = ?")
             values.append(actor_id)
         elif actor["role"] == UserRole.OFFICER.value:
-            clauses.append("(state IN ('SUBMITTED', 'ACKNOWLEDGED', 'NEEDS_INFO') OR assigned_to = ?)")
-            values.append(actor_id)
+            clauses.append("(state IN ('SUBMITTED', 'ACKNOWLEDGED', 'NEEDS_INFO') OR assigned_to IS NULL)")
         if state:
             clauses.append("state = ?")
             values.append(state.value)
@@ -908,26 +1160,30 @@ class WorkflowService:
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
     def _is_overdue(self, request: sqlite3.Row) -> bool:
-        if request["state"] == RequestState.NEEDS_INFO.value:
+        if (
+            RequestState(request["state"]) not in ACTIVE_STATES
+            or request["state"] == RequestState.NEEDS_INFO.value
+            or request["paused_at"] is not None
+        ):
             return False
-        return (
-            RequestState(request["state"]) in ACTIVE_STATES
-            and self._now() > self._parse_time(request["deadline"])
-        )
+        return self._now() > self._parse_time(request["deadline"])
 
     @staticmethod
     def _can_read(actor: sqlite3.Row, request: sqlite3.Row) -> bool:
-        if actor["role"] in (UserRole.SUPERVISOR.value, UserRole.AUDIT_INSPECTOR.value):
+        role = actor["role"]
+        if role == UserRole.AUDIT_INSPECTOR.value:
+            return False
+        if role == UserRole.SUPERVISOR.value:
             return True
-        if actor["role"] == UserRole.CITIZEN.value:
+        if role == UserRole.CITIZEN.value:
             return request["citizen_id"] == actor["id"]
-        if actor["role"] == UserRole.FIELD_OFFICER.value:
-            return request["assigned_to"] == actor["id"]
-        if actor["role"] == UserRole.OFFICER.value:
+        if role == UserRole.OFFICER.value:
             return (
-                request["state"] in (RequestState.SUBMITTED.value, RequestState.ACKNOWLEDGED.value, RequestState.NEEDS_INFO.value)
-                or request["assigned_to"] == actor["id"]
+                request["state"] in ("SUBMITTED", "ACKNOWLEDGED", "NEEDS_INFO")
+                or request["assigned_to"] is None
             )
+        if role == UserRole.FIELD_OFFICER.value:
+            return request["assigned_to"] == actor["id"]
         return False
 
     def _permitted_actions(
@@ -944,11 +1200,18 @@ class WorkflowService:
                     continue
             if rule.assigned_officer_required and request["assigned_to"] != actor["id"]:
                 continue
+            if source is RequestState.REJECTED and target is RequestState.ACKNOWLEDGED:
+                if not request["appeal_reason"] or not request["appealed_at"]:
+                    continue
             actions.append(f"TRANSITION:{target.value}")
         if state in ACTIVE_STATES and role in {UserRole.OFFICER, UserRole.SUPERVISOR}:
             actions.append("CONFIRM_CATEGORY")
         if state in {RequestState.ASSIGNED, RequestState.IN_PROGRESS, RequestState.REOPENED} and role is UserRole.SUPERVISOR:
             actions.append("REASSIGN")
+        if state is RequestState.REJECTED and role is UserRole.CITIZEN and request["citizen_id"] == actor["id"]:
+            actions.append("APPEAL")
+        if state is RequestState.IN_PROGRESS and role is UserRole.FIELD_OFFICER and request["assigned_to"] == actor["id"]:
+            actions.append("ADD_PROGRESS")
         return sorted(actions)
 
     def _serialize_request(
@@ -957,6 +1220,11 @@ class WorkflowService:
         if request is None:
             raise RuntimeError("request disappeared after successful command")
         result = dict(request)
+        if result.get("resolution_evidence_json") and isinstance(result["resolution_evidence_json"], str):
+            try:
+                result["resolution_evidence_json"] = json.loads(result["resolution_evidence_json"])
+            except Exception:
+                pass
         result["is_overdue"] = self._is_overdue(request)
         result["permitted_actions"] = self._permitted_actions(request, actor)
         return result
