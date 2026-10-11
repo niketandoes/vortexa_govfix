@@ -94,8 +94,51 @@ def clear_schema(connection: sqlite3.Connection) -> None:
     )
 
 
-def seed_database(
+def seed_extended_users(
     connection: sqlite3.Connection, *, reference_time: datetime | None = None
+) -> None:
+    now = (reference_time or datetime.now(UTC)).astimezone(UTC)
+    now_text = utc_iso(now)
+    extended = (
+        (
+            "USR-FLD-01",
+            "Field Officer Vikram Singh",
+            "Field Officer",
+            "vikram.singh@municipality.gov",
+            "Public Works",
+            now_text,
+        ),
+        (
+            "USR-FLD-02",
+            "Field Officer Sunita Rao",
+            "Field Officer",
+            "sunita.rao@municipality.gov",
+            "Sanitation",
+            now_text,
+        ),
+        (
+            "USR-AUD-01",
+            "Audit Inspector Meera Joshi",
+            "Audit Inspector",
+            "meera.joshi@audit.gov",
+            "Municipal Audit Commission",
+            now_text,
+        ),
+    )
+    connection.executemany(
+        """
+        INSERT OR IGNORE INTO users (id, name, role, email, department, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        extended,
+    )
+
+
+def seed_database(
+    connection: sqlite3.Connection,
+    *,
+    reference_time: datetime | None = None,
+    include_extended: bool = False,
 ) -> None:
     """Reset and populate a database with fictional, reproducible fixtures."""
 
@@ -104,7 +147,7 @@ def seed_database(
     initialize_database(connection)
 
     now_text = utc_iso(now)
-    users = (
+    base_users = [
         ("USR-CIT-01", "Ramesh Patel", "Citizen", "ramesh@citizen.local", None, now_text),
         ("USR-CIT-02", "Priya Sharma", "Citizen", "priya@citizen.local", None, now_text),
         (
@@ -131,13 +174,44 @@ def seed_database(
             "Municipal Head",
             now_text,
         ),
-    )
+    ]
+
+    if include_extended:
+        base_users.extend(
+            [
+                (
+                    "USR-FLD-01",
+                    "Field Officer Vikram Singh",
+                    "Field Officer",
+                    "vikram.singh@municipality.gov",
+                    "Public Works",
+                    now_text,
+                ),
+                (
+                    "USR-FLD-02",
+                    "Field Officer Sunita Rao",
+                    "Field Officer",
+                    "sunita.rao@municipality.gov",
+                    "Sanitation",
+                    now_text,
+                ),
+                (
+                    "USR-AUD-01",
+                    "Audit Inspector Meera Joshi",
+                    "Audit Inspector",
+                    "meera.joshi@audit.gov",
+                    "Municipal Audit Commission",
+                    now_text,
+                ),
+            ]
+        )
+
     connection.executemany(
         """
         INSERT INTO users (id, name, role, email, department, created_at)
         VALUES (?, ?, ?, ?, ?, ?)
         """,
-        users,
+        base_users,
     )
 
     submitted_at = now
@@ -149,6 +223,7 @@ def seed_database(
             "USR-CIT-01",
             "Water leaking near the market",
             "A pipe is leaking beside the central market entrance.",
+            "Ward 3, Central Market Gate 2",
             "Water Leak",
             "Uncategorised",
             "SUBMITTED",
@@ -163,6 +238,7 @@ def seed_database(
             "USR-CIT-02",
             "Streetlight not working",
             "The streetlight outside Ward 8 community hall is dark.",
+            "Ward 8, Outside Community Hall",
             "Streetlight",
             "Streetlight",
             "ASSIGNED",
@@ -177,6 +253,7 @@ def seed_database(
             "USR-CIT-01",
             "Burst pipe near school",
             "Water is flowing from a burst pipe opposite the primary school.",
+            "Ward 12, Opposite Primary School",
             "Water Leak",
             "Water Leak",
             "ASSIGNED",
@@ -190,9 +267,9 @@ def seed_database(
     connection.executemany(
         """
         INSERT INTO requests (
-            id, citizen_id, title, text, reported_category, category, state,
+            id, citizen_id, title, text, location, reported_category, category, state,
             assigned_to, sla_started_at, created_at, updated_at, deadline
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         requests,
     )

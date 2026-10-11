@@ -125,3 +125,9 @@ def list_requests(
 def list_audit(connection: Connection, actor_id: ActorId) -> dict:
     data = WorkflowService(connection).list_audit(actor_id=actor_id)
     return {"success": True, "data": data}
+
+
+@router.get("/audit/verify")
+def verify_audit(connection: Connection, actor_id: ActorId) -> dict:
+    data = WorkflowService(connection).verify_audit(actor_id=actor_id)
+    return {"success": True, "data": data}

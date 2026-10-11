@@ -12,13 +12,17 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 class UserRole(StrEnum):
     CITIZEN = "Citizen"
     OFFICER = "Officer"
+    FIELD_OFFICER = "Field Officer"
     SUPERVISOR = "Supervisor"
+    AUDIT_INSPECTOR = "Audit Inspector"
 
 
 class ActorRole(StrEnum):
     CITIZEN = "Citizen"
     OFFICER = "Officer"
+    FIELD_OFFICER = "Field Officer"
     SUPERVISOR = "Supervisor"
+    AUDIT_INSPECTOR = "Audit Inspector"
     SYSTEM = "System"
 
 
@@ -33,6 +37,7 @@ class Category(StrEnum):
 class RequestState(StrEnum):
     SUBMITTED = "SUBMITTED"
     ACKNOWLEDGED = "ACKNOWLEDGED"
+    NEEDS_INFO = "NEEDS_INFO"
     ASSIGNED = "ASSIGNED"
     IN_PROGRESS = "IN_PROGRESS"
     RESOLVED = "RESOLVED"
@@ -81,6 +86,7 @@ class UserCreate(GovFixModel):
 class RequestCreate(GovFixModel):
     title: str = Field(min_length=1, max_length=200)
     text: str = Field(min_length=1, max_length=10_000)
+    location: str | None = Field(default=None, max_length=500)
     reported_category: Category | None = None
 
     @field_validator("reported_category")
@@ -98,12 +104,17 @@ class RequestRecord(GovFixModel):
     citizen_id: str
     title: str
     text: str
+    location: str | None = None
     reported_category: Category | None
     category: Category
     state: RequestState
     assigned_to: str | None
     rejection_reason: str | None
     resolution_notes: str | None
+    info_request_note: str | None = None
+    additional_info: str | None = None
+    paused_at: datetime | None = None
+    total_paused_seconds: int = 0
     escalation_level: int = Field(ge=0, le=2)
     sla_started_at: datetime
     sla_cycle: int = Field(ge=1)
@@ -124,6 +135,8 @@ class TransitionCommand(VersionedCommand):
     rejection_reason: str | None = None
     resolution_notes: str | None = None
     reopen_reason: str | None = None
+    info_request_note: str | None = None
+    additional_info: str | None = None
 
 
 class CategoryCommand(VersionedCommand):

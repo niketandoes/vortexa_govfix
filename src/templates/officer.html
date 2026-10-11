@@ -1,0 +1,465 @@
+{% extends "base.html" %}
+
+{% block header_actions %}
+<div class="flex items-center space-x-2">
+  <button onclick="OfficerWorkspace.loadQueue()" class="inline-flex items-center px-3 py-1.5 border border-slate-300 text-xs font-medium rounded-md text-slate-700 bg-white hover:bg-slate-50 shadow-sm transition">
+    <svg class="w-3.5 h-3.5 mr-1.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+    </svg>
+    Refresh Queue
+  </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <!-- Metric Badges Row -->
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+      <div class="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Intake Queue</div>
+      <div class="text-2xl font-bold text-slate-900 mt-1 font-tabular" id="metric-total">0</div>
+      <div class="text-xs text-slate-500 mt-0.5">Complaints in scope</div>
+    </div>
+    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+      <div class="text-[11px] font-semibold uppercase tracking-wider text-blue-600">Unacknowledged</div>
+      <div class="text-2xl font-bold text-blue-700 mt-1 font-tabular" id="metric-submitted">0</div>
+      <div class="text-xs text-slate-500 mt-0.5">Awaiting triage</div>
+    </div>
+    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+      <div class="text-[11px] font-semibold uppercase tracking-wider text-amber-600">Pending Citizen Info</div>
+      <div class="text-2xl font-bold text-amber-700 mt-1 font-tabular" id="metric-needs-info">0</div>
+      <div class="text-xs text-slate-500 mt-0.5">Clock paused</div>
+    </div>
+    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+      <div class="text-[11px] font-semibold uppercase tracking-wider text-red-600">Breached / At-Risk</div>
+      <div class="text-2xl font-bold text-red-700 mt-1 font-tabular" id="metric-overdue">0</div>
+      <div class="text-xs text-slate-500 mt-0.5">Urgent priority</div>
+    </div>
+  </div>
+
+  <!-- Queue Workspace Grid -->
+  <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+    <!-- Left: Triage Table / Queue List (8 cols) -->
+    <div class="lg:col-span-8 space-y-4">
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <!-- Filter bar -->
+        <div class="bg-slate-50/80 px-5 py-3 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center space-x-2">
+            <span class="text-xs font-semibold text-slate-700">Filter Status:</span>
+            <select id="filter-state" onchange="OfficerWorkspace.loadQueue()" class="text-xs rounded-md border-slate-300 py-1 px-2 border bg-white">
+              <option value="">All States</option>
+              <option value="SUBMITTED">SUBMITTED (New)</option>
+              <option value="ACKNOWLEDGED">ACKNOWLEDGED (Triaged)</option>
+              <option value="NEEDS_INFO">NEEDS_INFO (Paused)</option>
+              <option value="ASSIGNED">ASSIGNED (In Field)</option>
+              <option value="IN_PROGRESS">IN_PROGRESS (Working)</option>
+            </select>
+          </div>
+          <span id="queue-status-text" class="text-xs text-slate-500">Showing all assigned &amp; unassigned records</span>
+        </div>
+
+        <!-- Table Container -->
+        <div class="overflow-x-auto min-h-[350px]">
+          <div id="queue-loading" class="flex flex-col items-center justify-center py-16 text-slate-400">
+            <svg class="animate-spin h-6 w-6 text-slate-500 mb-2" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+            </svg>
+            <p class="text-xs">Loading triage queue from municipal database...</p>
+          </div>
+
+          <div id="queue-empty" class="hidden text-center py-16 px-4">
+            <div class="w-12 h-12 rounded-full bg-slate-100 text-slate-400 mx-auto flex items-center justify-center mb-3">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <h3 class="text-sm font-semibold text-slate-800">Queue is Clear</h3>
+            <p class="text-xs text-slate-500 mt-1">No grievances match the current filter criteria.</p>
+          </div>
+
+          <table id="queue-table" class="min-w-full divide-y divide-slate-200 hidden text-left text-xs">
+            <thead class="bg-slate-50 font-semibold text-slate-700">
+              <tr>
+                <th scope="col" class="px-4 py-3">Token &amp; Title</th>
+                <th scope="col" class="px-3 py-3">Category</th>
+                <th scope="col" class="px-3 py-3">State</th>
+                <th scope="col" class="px-3 py-3">SLA Timeline</th>
+                <th scope="col" class="px-4 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="queue-tbody" class="divide-y divide-slate-100 bg-white"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Selected Complaint Detail & AI Assist (4 cols) -->
+    <div class="lg:col-span-4 space-y-6">
+      
+      <!-- Complaint Quick View Card -->
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-4" id="detail-card">
+        <div class="border-b border-slate-100 pb-3">
+          <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Complaint Detail Inspector</span>
+          <h3 class="text-sm font-bold text-slate-900 mt-1" id="detail-title">Select a complaint from queue</h3>
+          <span class="text-xs font-mono text-slate-500" id="detail-id">-</span>
+        </div>
+
+        <div class="space-y-3 text-xs">
+          <div>
+            <span class="font-semibold text-slate-700 block">Citizen Narrative:</span>
+            <p class="text-slate-600 mt-0.5 bg-slate-50 p-2.5 rounded-lg border border-slate-100 leading-relaxed" id="detail-description">
+              Click any row in the triage queue to inspect full grievance text, timestamps, and governance history.
+            </p>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2 text-[11px]">
+            <div>
+              <span class="text-slate-400 block">Reported Category:</span>
+              <span class="font-semibold text-slate-800" id="detail-category">-</span>
+            </div>
+            <div>
+              <span class="text-slate-400 block">Assigned Officer:</span>
+              <span class="font-semibold text-slate-800" id="detail-assigned">-</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- AI Boundary / Triaging Recommendation Card -->
+      <div class="bg-slate-900 text-slate-100 rounded-xl p-5 shadow-sm space-y-3 border border-slate-800">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center space-x-2">
+            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-200">AI Triage Advisory</h3>
+          </div>
+          <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">Advisory Only</span>
+        </div>
+
+        <p class="text-xs text-slate-300 leading-relaxed" id="ai-recommendation-text">
+          Select an incoming complaint to generate rule-based triage category recommendations and departmental routing advice.
+        </p>
+
+        <div class="text-[11px] text-slate-400 bg-slate-800/80 p-2.5 rounded-lg border border-slate-700/60">
+          <strong class="text-slate-200">Governance Invariant:</strong> AI never mutates state autonomously. Human officer must review and confirm category changes or task assignments.
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+</div>
+
+<!-- Modal: Assign Field Officer -->
+<div id="assign-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-backdrop">
+  <div class="bg-white rounded-xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden">
+    <div class="bg-indigo-50 border-b border-indigo-100 px-5 py-4 flex items-center justify-between">
+      <h3 class="text-sm font-semibold text-indigo-900">Assign Field Officer</h3>
+      <button class="text-slate-400 hover:text-slate-600 font-bold" onclick="GovFix.closeModal('assign-modal')">&times;</button>
+    </div>
+    <form id="assign-form" class="p-5 space-y-4" onsubmit="OfficerWorkspace.submitAssignment(event)">
+      <input type="hidden" id="assign-req-id" />
+      <input type="hidden" id="assign-version" />
+      <div>
+        <label class="block text-xs font-semibold text-slate-700 mb-1">Select Field Officer <span class="text-red-500">*</span></label>
+        <select id="assign-officer-id" required class="w-full text-xs rounded-lg border-slate-300 shadow-sm border p-2 bg-white">
+          <option value="USR-FLD-01">Field Officer Vikram Singh (Public Works &middot; Field)</option>
+          <option value="USR-FLD-02">Field Officer Sunita Rao (Sanitation &middot; Field)</option>
+          <option value="USR-OFF-01">Officer Anil Kumar (Public Works &middot; General)</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-700 mb-1">Assignment / Work Instructions</label>
+        <textarea id="assign-instructions" rows="3" placeholder="Provide ground instructions for field team..." class="w-full text-xs rounded-lg border-slate-300 shadow-sm border p-2"></textarea>
+      </div>
+      <div class="flex justify-end space-x-2">
+        <button type="button" class="px-3 py-1.5 border border-slate-300 rounded text-xs" onclick="GovFix.closeModal('assign-modal')">Cancel</button>
+        <button type="submit" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-xs font-medium">Confirm Assignment</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Request Missing Citizen Info -->
+<div id="request-info-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-backdrop">
+  <div class="bg-white rounded-xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden">
+    <div class="bg-amber-50 border-b border-amber-100 px-5 py-4 flex items-center justify-between">
+      <h3 class="text-sm font-semibold text-amber-900">Request Missing Information from Citizen</h3>
+      <button class="text-slate-400 hover:text-slate-600 font-bold" onclick="GovFix.closeModal('request-info-modal')">&times;</button>
+    </div>
+    <form id="request-info-form" class="p-5 space-y-4" onsubmit="OfficerWorkspace.submitInfoRequest(event)">
+      <input type="hidden" id="reqinfo-req-id" />
+      <input type="hidden" id="reqinfo-version" />
+      <div>
+        <label class="block text-xs font-semibold text-slate-700 mb-1">Reason for Request (SLA Pauses) <span class="text-red-500">*</span></label>
+        <textarea id="reqinfo-reason" rows="3" required placeholder="Specify landmark, photos, or clarification required..." class="w-full text-xs rounded-lg border-slate-300 shadow-sm border p-2"></textarea>
+      </div>
+      <div class="text-[11px] text-amber-700 bg-amber-50 p-2.5 rounded border border-amber-200">
+        Transitioning to <strong>NEEDS_INFO</strong> pauses the statutory SLA timer until the citizen responds.
+      </div>
+      <div class="flex justify-end space-x-2">
+        <button type="button" class="px-3 py-1.5 border border-slate-300 rounded text-xs" onclick="GovFix.closeModal('request-info-modal')">Cancel</button>
+        <button type="submit" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-medium">Issue Info Request</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Reclassify Category -->
+<div id="reclassify-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-backdrop">
+  <div class="bg-white rounded-xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden">
+    <div class="bg-slate-100 border-b border-slate-200 px-5 py-4 flex items-center justify-between">
+      <h3 class="text-sm font-semibold text-slate-900">Reclassify Grievance Category</h3>
+      <button class="text-slate-400 hover:text-slate-600 font-bold" onclick="GovFix.closeModal('reclassify-modal')">&times;</button>
+    </div>
+    <form id="reclassify-form" class="p-5 space-y-4" onsubmit="OfficerWorkspace.submitReclassification(event)">
+      <input type="hidden" id="reclassify-req-id" />
+      <input type="hidden" id="reclassify-version" />
+      <div>
+        <label class="block text-xs font-semibold text-slate-700 mb-1">Target Category <span class="text-red-500">*</span></label>
+        <select id="reclassify-target" required class="w-full text-xs rounded-lg border-slate-300 shadow-sm border p-2 bg-white">
+          <option value="Water Leak">Water Leak (24h SLA)</option>
+          <option value="Garbage Collection">Garbage Collection (24h SLA)</option>
+          <option value="Streetlight">Streetlight Failure (48h SLA)</option>
+          <option value="Pothole">Pothole &amp; Road Damage (72h SLA)</option>
+        </select>
+      </div>
+      <div class="flex justify-end space-x-2">
+        <button type="button" class="px-3 py-1.5 border border-slate-300 rounded text-xs" onclick="GovFix.closeModal('reclassify-modal')">Cancel</button>
+        <button type="submit" class="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded text-xs font-medium">Confirm Reclassification</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const OfficerWorkspace = {
+    cachedRequests: [],
+    selectedRequest: null,
+
+    async loadQueue() {
+      const stateFilter = document.getElementById("filter-state").value;
+      const spinner = document.getElementById("queue-loading");
+      const emptyState = document.getElementById("queue-empty");
+      const table = document.getElementById("queue-table");
+      const tbody = document.getElementById("queue-tbody");
+
+      if (spinner) spinner.classList.remove("hidden");
+      if (emptyState) emptyState.classList.add("hidden");
+      if (table) table.classList.add("hidden");
+      if (tbody) tbody.innerHTML = "";
+
+      try {
+        const filters = stateFilter ? { state: stateFilter } : {};
+        const response = await GovFix.listRequests(filters);
+        const items = (response && response.items) ? response.items : [];
+        this.cachedRequests = items;
+
+        // Update metric counters
+        this.updateMetrics(items);
+
+        if (spinner) spinner.classList.add("hidden");
+
+        if (items.length === 0) {
+          if (emptyState) emptyState.classList.remove("hidden");
+          return;
+        }
+
+        if (table) table.classList.remove("hidden");
+
+        tbody.innerHTML = items.map(req => {
+          const sla = GovFix.formatSLARemaining(req.sla_due_at, req.is_overdue);
+          const isSubmitted = req.state === "SUBMITTED";
+          const isAck = req.state === "ACKNOWLEDGED";
+
+          return `
+            <tr class="hover:bg-slate-50 cursor-pointer transition border-b border-slate-100" onclick="OfficerWorkspace.selectRequest('${req.id}')">
+              <td class="px-4 py-3">
+                <span class="font-mono font-bold text-slate-900 text-xs">${req.id}</span>
+                <div class="font-medium text-slate-800 text-xs mt-0.5 max-w-xs truncate">${req.title}</div>
+                <div class="text-[10px] text-slate-400 font-mono mt-0.5">Citizen: ${req.citizen_id}</div>
+              </td>
+              <td class="px-3 py-3">
+                ${GovFix.categoryBadge(req.category)}
+              </td>
+              <td class="px-3 py-3">
+                <div class="space-y-1">
+                  ${GovFix.statusBadge(req.state)}
+                  ${GovFix.escalationBadge(req.escalation_level)}
+                </div>
+              </td>
+              <td class="px-3 py-3">
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] border font-tabular ${sla.class}">
+                  ${sla.text}
+                </span>
+                <div class="text-[10px] text-slate-400 mt-1">${GovFix.formatTimeAgo(req.created_at)}</div>
+              </td>
+              <td class="px-4 py-3 text-right space-x-1" onclick="event.stopPropagation()">
+                ${isSubmitted ? `
+                  <button onclick="OfficerWorkspace.acknowledgeRequest('${req.id}', ${req.version})" class="px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-[11px] font-medium shadow-sm">
+                    Acknowledge
+                  </button>
+                ` : ''}
+
+                ${isAck || isSubmitted ? `
+                  <button onclick="OfficerWorkspace.openAssignModal('${req.id}', ${req.version})" class="px-2 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded text-[11px] font-medium shadow-sm">
+                    Assign
+                  </button>
+                  <button onclick="OfficerWorkspace.openRequestInfoModal('${req.id}', ${req.version})" class="px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-[11px] font-medium shadow-sm">
+                    Need Info
+                  </button>
+                  <button onclick="OfficerWorkspace.openReclassifyModal('${req.id}', ${req.version})" class="px-2 py-1 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded text-[11px] font-medium">
+                    Reclassify
+                  </button>
+                ` : ''}
+              </td>
+            </tr>
+          `;
+        }).join("");
+
+        // Select first request if available
+        if (items.length > 0) {
+          this.selectRequest(items[0].id);
+        }
+
+      } catch (err) {
+        if (spinner) spinner.classList.add("hidden");
+        GovFix.showErrorModal(err);
+      }
+    },
+
+    updateMetrics(items) {
+      document.getElementById("metric-total").textContent = items.length;
+      document.getElementById("metric-submitted").textContent = items.filter(r => r.state === "SUBMITTED").length;
+      document.getElementById("metric-needs-info").textContent = items.filter(r => r.state === "NEEDS_INFO").length;
+      document.getElementById("metric-overdue").textContent = items.filter(r => r.is_overdue || r.escalation_level > 0).length;
+    },
+
+    selectRequest(id) {
+      const req = this.cachedRequests.find(r => r.id === id);
+      if (!req) return;
+      this.selectedRequest = req;
+
+      document.getElementById("detail-id").textContent = req.id + " (v" + req.version + ")";
+      document.getElementById("detail-title").textContent = req.title;
+      document.getElementById("detail-description").textContent = req.description || "No description provided.";
+      document.getElementById("detail-category").textContent = req.category;
+      document.getElementById("detail-assigned").textContent = req.assigned_to || "Unassigned";
+
+      // AI Recommendation heuristic
+      const aiEl = document.getElementById("ai-recommendation-text");
+      const textLower = (req.title + " " + (req.description || "")).toLowerCase();
+      let rec = "Review grievance details. If actionable, acknowledge and assign to departmental field officer.";
+      if (textLower.includes("water") || textLower.includes("leak") || textLower.includes("pipe")) {
+        rec = "AI Recommendation: High confidence for 'Water Leak' (24h SLA). Suggested Field Officer: USR-OFF-01 (Public Works).";
+      } else if (textLower.includes("garbage") || textLower.includes("waste") || textLower.includes("dump")) {
+        rec = "AI Recommendation: High confidence for 'Garbage Collection' (24h SLA). Suggested Field Officer: USR-OFF-02 (Sanitation).";
+      } else if (textLower.includes("light") || textLower.includes("dark") || textLower.includes("pole")) {
+        rec = "AI Recommendation: Detected 'Streetlight' failure (48h SLA). Suggested Field Officer: USR-OFF-01 (Public Works).";
+      } else if (textLower.includes("pothole") || textLower.includes("road") || textLower.includes("tar")) {
+        rec = "AI Recommendation: Detected 'Pothole' repair (72h SLA). Suggested Field Officer: USR-OFF-01 (Public Works).";
+      }
+      aiEl.textContent = rec;
+    },
+
+    async acknowledgeRequest(id, version) {
+      try {
+        await GovFix.transitionRequest(id, "ACKNOWLEDGED", {
+          expected_version: version,
+          reason: "Triage officer intake review verified"
+        });
+        GovFix.showToast(`Request ${id} acknowledged.`, "success");
+        await this.loadQueue();
+      } catch (err) {
+        GovFix.showErrorModal(err);
+      }
+    },
+
+    openAssignModal(id, version) {
+      document.getElementById("assign-req-id").value = id;
+      document.getElementById("assign-version").value = version;
+      document.getElementById("assign-instructions").value = "";
+      GovFix.openModal("assign-modal");
+    },
+
+    async submitAssignment(e) {
+      e.preventDefault();
+      const id = document.getElementById("assign-req-id").value;
+      const version = parseInt(document.getElementById("assign-version").value, 10);
+      const officerId = document.getElementById("assign-officer-id").value;
+      const instructions = document.getElementById("assign-instructions").value;
+
+      try {
+        await GovFix.transitionRequest(id, "ASSIGNED", {
+          expected_version: version,
+          assigned_to: officerId,
+          reason: instructions || "Dispatched to field officer"
+        });
+        GovFix.closeModal("assign-modal");
+        GovFix.showToast(`Request assigned to ${officerId}.`, "success");
+        await this.loadQueue();
+      } catch (err) {
+        GovFix.showErrorModal(err);
+      }
+    },
+
+    openRequestInfoModal(id, version) {
+      document.getElementById("reqinfo-req-id").value = id;
+      document.getElementById("reqinfo-version").value = version;
+      document.getElementById("reqinfo-reason").value = "";
+      GovFix.openModal("request-info-modal");
+    },
+
+    async submitInfoRequest(e) {
+      e.preventDefault();
+      const id = document.getElementById("reqinfo-req-id").value;
+      const version = parseInt(document.getElementById("reqinfo-version").value, 10);
+      const reason = document.getElementById("reqinfo-reason").value;
+
+      try {
+        await GovFix.transitionRequest(id, "NEEDS_INFO", {
+          expected_version: version,
+          info_request_note: reason,
+          reason: reason
+        });
+        GovFix.closeModal("request-info-modal");
+        GovFix.showToast(`Requested additional info. SLA paused.`, "warning");
+        await this.loadQueue();
+      } catch (err) {
+        GovFix.showErrorModal(err);
+      }
+    },
+
+    openReclassifyModal(id, version) {
+      document.getElementById("reclassify-req-id").value = id;
+      document.getElementById("reclassify-version").value = version;
+      GovFix.openModal("reclassify-modal");
+    },
+
+    async submitReclassification(e) {
+      e.preventDefault();
+      const id = document.getElementById("reclassify-req-id").value;
+      const version = parseInt(document.getElementById("reclassify-version").value, 10);
+      const category = document.getElementById("reclassify-target").value;
+
+      try {
+        await GovFix.confirmCategory(id, category, version);
+        GovFix.closeModal("reclassify-modal");
+        GovFix.showToast(`Category reclassified to ${category}.`, "success");
+        await this.loadQueue();
+      } catch (err) {
+        GovFix.showErrorModal(err);
+      }
+    }
+  };
+
+  document.addEventListener("DOMContentLoaded", () => {
+    OfficerWorkspace.loadQueue();
+    window.addEventListener("govfix:persona-changed", () => OfficerWorkspace.loadQueue());
+  });
+</script>
+{% endblock %}

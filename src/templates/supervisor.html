@@ -1,0 +1,328 @@
+{% extends "base.html" %}
+
+{% block header_actions %}
+<div class="flex items-center space-x-2">
+  <button onclick="SupervisorCommand.loadOverview()" class="inline-flex items-center px-3 py-1.5 border border-slate-300 text-xs font-medium rounded-md text-slate-700 bg-white hover:bg-slate-50 shadow-sm transition">
+    <svg class="w-3.5 h-3.5 mr-1.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+    </svg>
+    Refresh Command Center
+  </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <!-- Simulated Municipal Clock Control Deck -->
+  <div class="bg-slate-900 text-slate-100 rounded-xl p-5 border border-slate-800 shadow-md">
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div>
+        <div class="flex items-center space-x-2">
+          <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
+          <h2 class="text-sm font-bold tracking-wide uppercase text-slate-200">Simulated Municipal Clock Controller</h2>
+        </div>
+        <p class="text-xs text-slate-400 mt-1">
+          Accelerate or pause time to test SLA breach triggers, automated escalation ladders, and timeout workflows.
+        </p>
+      </div>
+
+      <!-- Quick Fast-Forward Controls -->
+      <div class="flex flex-wrap items-center gap-2">
+        <button onclick="SupervisorCommand.advanceClock(1)" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded text-xs font-mono font-medium transition">
+          +1 Hour
+        </button>
+        <button onclick="SupervisorCommand.advanceClock(24)" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded text-xs font-mono font-medium transition">
+          +24 Hours (SLA Breach)
+        </button>
+        <button onclick="SupervisorCommand.advanceClock(48)" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded text-xs font-mono font-medium transition">
+          +48 Hours (L2 Escalation)
+        </button>
+        <button onclick="SupervisorCommand.toggleFreeze()" id="btn-clock-freeze" class="px-2.5 py-1.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 rounded text-xs font-mono font-medium transition">
+          Freeze / Resume
+        </button>
+        <button onclick="SupervisorCommand.resetClock()" class="px-2.5 py-1.5 bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30 rounded text-xs font-mono font-medium transition">
+          Reset Clock
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Operational Health Metrics -->
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+      <div class="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Total Grievances</div>
+      <div class="text-2xl font-bold text-slate-900 mt-1 font-tabular" id="sup-metric-total">0</div>
+      <div class="text-xs text-slate-500 mt-0.5">Across all departments</div>
+    </div>
+    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+      <div class="text-[11px] font-semibold uppercase tracking-wider text-amber-600">L1 Supervisor Escalation</div>
+      <div class="text-2xl font-bold text-amber-700 mt-1 font-tabular" id="sup-metric-l1">0</div>
+      <div class="text-xs text-slate-500 mt-0.5">Breached 100% statutory SLA</div>
+    </div>
+    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+      <div class="text-[11px] font-semibold uppercase tracking-wider text-red-600">L2 Dept Head Escalation</div>
+      <div class="text-2xl font-bold text-red-700 mt-1 font-tabular" id="sup-metric-l2">0</div>
+      <div class="text-xs text-slate-500 mt-0.5">Critical 150% SLA timeout</div>
+    </div>
+    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+      <div class="text-[11px] font-semibold uppercase tracking-wider text-rose-600">Disputed / Reopened</div>
+      <div class="text-2xl font-bold text-rose-700 mt-1 font-tabular" id="sup-metric-reopened">0</div>
+      <div class="text-xs text-slate-500 mt-0.5">Citizen rejected field repair</div>
+    </div>
+  </div>
+
+  <!-- Municipal Oversight Table -->
+  <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+    <div class="bg-slate-50/80 px-5 py-3.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h2 class="text-sm font-semibold text-slate-900">Municipal Complaint Roster</h2>
+        <p class="text-xs text-slate-500">Full system transparency with supervisor override capabilities</p>
+      </div>
+
+      <!-- Filters -->
+      <div class="flex items-center space-x-2">
+        <label for="sup-filter-escalation" class="text-xs font-semibold text-slate-700">Filter:</label>
+        <select id="sup-filter-escalation" onchange="SupervisorCommand.applyFilter()" class="text-xs rounded-md border-slate-300 py-1 px-2 border bg-white">
+          <option value="all">All Complaints</option>
+          <option value="escalated">Escalated Only (L1 / L2)</option>
+          <option value="reopened">Disputed / Reopened</option>
+          <option value="overdue">Overdue Deadlines</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="overflow-x-auto min-h-[350px]">
+      <div id="sup-loading" class="flex flex-col items-center justify-center py-16 text-slate-400">
+        <svg class="animate-spin h-6 w-6 text-slate-500 mb-2" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+        </svg>
+        <p class="text-xs">Fetching municipal complaint roster...</p>
+      </div>
+
+      <div id="sup-empty" class="hidden text-center py-16 px-4">
+        <div class="w-12 h-12 rounded-full bg-slate-100 text-slate-400 mx-auto flex items-center justify-center mb-3">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
+        <h3 class="text-sm font-semibold text-slate-800">No Records Found</h3>
+        <p class="text-xs text-slate-500 mt-1">No municipal complaints match the selected filter.</p>
+      </div>
+
+      <table id="sup-table" class="min-w-full divide-y divide-slate-200 hidden text-left text-xs">
+        <thead class="bg-slate-50 font-semibold text-slate-700">
+          <tr>
+            <th scope="col" class="px-4 py-3">Token &amp; Title</th>
+            <th scope="col" class="px-3 py-3">Category</th>
+            <th scope="col" class="px-3 py-3">State</th>
+            <th scope="col" class="px-3 py-3">Assigned To</th>
+            <th scope="col" class="px-3 py-3">SLA Status</th>
+            <th scope="col" class="px-4 py-3 text-right">Supervisor Controls</th>
+          </tr>
+        </thead>
+        <tbody id="sup-tbody" class="divide-y divide-slate-100 bg-white"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- Modal: Supervisor Reassignment -->
+<div id="reassign-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-backdrop">
+  <div class="bg-white rounded-xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden">
+    <div class="bg-slate-900 text-white px-5 py-4 flex items-center justify-between">
+      <h3 class="text-sm font-semibold">Supervisor Work Order Reassignment</h3>
+      <button class="text-slate-400 hover:text-white font-bold" onclick="GovFix.closeModal('reassign-modal')">&times;</button>
+    </div>
+    <form id="reassign-form" class="p-5 space-y-4" onsubmit="SupervisorCommand.submitReassignment(event)">
+      <input type="hidden" id="reassign-req-id" />
+      <input type="hidden" id="reassign-version" />
+      <div>
+        <label class="block text-xs font-semibold text-slate-700 mb-1">New Assigned Officer <span class="text-red-500">*</span></label>
+        <select id="reassign-target-officer" required class="w-full text-xs rounded-lg border-slate-300 shadow-sm border p-2 bg-white">
+          <option value="USR-FLD-01">Field Officer Vikram Singh (Public Works &middot; Field)</option>
+          <option value="USR-FLD-02">Field Officer Sunita Rao (Sanitation &middot; Field)</option>
+          <option value="USR-OFF-01">Officer Anil Kumar (Public Works &middot; General)</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-700 mb-1">Supervisor Reassignment Justification <span class="text-red-500">*</span></label>
+        <textarea id="reassign-reason" rows="3" required placeholder="Explain why ticket is being reassigned (e.g. Workload rebalancing, SLA escalation recovery)..." class="w-full text-xs rounded-lg border-slate-300 shadow-sm border p-2"></textarea>
+      </div>
+      <div class="bg-amber-50 p-3 rounded border border-amber-200 text-xs text-amber-800">
+        Reassignment requires supervisor authority and is recorded in the SHA-256 audit log.
+      </div>
+      <div class="flex justify-end space-x-2">
+        <button type="button" class="px-3 py-1.5 border border-slate-300 rounded text-xs" onclick="GovFix.closeModal('reassign-modal')">Cancel</button>
+        <button type="submit" class="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded text-xs font-medium">Execute Reassignment</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const SupervisorCommand = {
+    allRequests: [],
+
+    async loadOverview() {
+      const spinner = document.getElementById("sup-loading");
+      const emptyState = document.getElementById("sup-empty");
+      const table = document.getElementById("sup-table");
+
+      if (spinner) spinner.classList.remove("hidden");
+      if (emptyState) emptyState.classList.add("hidden");
+      if (table) table.classList.add("hidden");
+
+      try {
+        const response = await GovFix.listRequests();
+        const items = (response && response.items) ? response.items : [];
+        this.allRequests = items;
+
+        this.updateMetrics(items);
+        this.applyFilter();
+
+        if (spinner) spinner.classList.add("hidden");
+      } catch (err) {
+        if (spinner) spinner.classList.add("hidden");
+        GovFix.showErrorModal(err);
+      }
+    },
+
+    updateMetrics(items) {
+      document.getElementById("sup-metric-total").textContent = items.length;
+      document.getElementById("sup-metric-l1").textContent = items.filter(r => r.escalation_level === 1).length;
+      document.getElementById("sup-metric-l2").textContent = items.filter(r => r.escalation_level === 2).length;
+      document.getElementById("sup-metric-reopened").textContent = items.filter(r => r.state === "REOPENED").length;
+    },
+
+    applyFilter() {
+      const filter = document.getElementById("sup-filter-escalation").value;
+      const emptyState = document.getElementById("sup-empty");
+      const table = document.getElementById("sup-table");
+      const tbody = document.getElementById("sup-tbody");
+
+      let filtered = this.allRequests;
+      if (filter === "escalated") {
+        filtered = filtered.filter(r => r.escalation_level > 0);
+      } else if (filter === "reopened") {
+        filtered = filtered.filter(r => r.state === "REOPENED");
+      } else if (filter === "overdue") {
+        filtered = filtered.filter(r => r.is_overdue);
+      }
+
+      if (filtered.length === 0) {
+        if (emptyState) emptyState.classList.remove("hidden");
+        if (table) table.classList.add("hidden");
+        return;
+      }
+
+      if (emptyState) emptyState.classList.add("hidden");
+      if (table) table.classList.remove("hidden");
+
+      tbody.innerHTML = filtered.map(req => {
+        const sla = GovFix.formatSLARemaining(req.sla_due_at, req.is_overdue);
+
+        return `
+          <tr class="hover:bg-slate-50 transition border-b border-slate-100">
+            <td class="px-4 py-3">
+              <span class="font-mono font-bold text-slate-900 text-xs">${req.id}</span>
+              <div class="font-medium text-slate-800 text-xs mt-0.5">${req.title}</div>
+            </td>
+            <td class="px-3 py-3">
+              ${GovFix.categoryBadge(req.category)}
+            </td>
+            <td class="px-3 py-3 space-y-1">
+              <div>${GovFix.statusBadge(req.state)}</div>
+              <div>${GovFix.escalationBadge(req.escalation_level)}</div>
+            </td>
+            <td class="px-3 py-3">
+              <span class="font-mono text-xs font-semibold text-slate-800">${req.assigned_to || '<span class="text-slate-400 font-normal">Unassigned</span>'}</span>
+            </td>
+            <td class="px-3 py-3">
+              <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] border font-tabular ${sla.class}">
+                ${sla.text}
+              </span>
+            </td>
+            <td class="px-4 py-3 text-right">
+              <button onclick="SupervisorCommand.openReassignModal('${req.id}', ${req.version})" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-900 text-white rounded text-[11px] font-medium shadow-sm transition">
+                Reassign Officer
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join("");
+    },
+
+    openReassignModal(id, version) {
+      document.getElementById("reassign-req-id").value = id;
+      document.getElementById("reassign-version").value = version;
+      document.getElementById("reassign-reason").value = "";
+      GovFix.openModal("reassign-modal");
+    },
+
+    async submitReassignment(e) {
+      e.preventDefault();
+      const id = document.getElementById("reassign-req-id").value;
+      const version = parseInt(document.getElementById("reassign-version").value, 10);
+      const targetOfficer = document.getElementById("reassign-target-officer").value;
+      const reason = document.getElementById("reassign-reason").value;
+
+      try {
+        await GovFix.reassignRequest(id, targetOfficer, reason, version);
+        GovFix.closeModal("reassign-modal");
+        GovFix.showToast(`Request reassigned to ${targetOfficer}.`, "success");
+        await this.loadOverview();
+      } catch (err) {
+        GovFix.showErrorModal(err);
+      }
+    },
+
+    async advanceClock(hours) {
+      try {
+        const state = await GovFix.advanceClock(hours * 3600);
+        GovFix.showToast(`Simulated clock advanced by ${hours} hour(s).`, "info");
+        await GovFix.updateHeaderClock();
+        await this.loadOverview();
+      } catch (err) {
+        GovFix.showErrorModal(err);
+      }
+    },
+
+    async toggleFreeze() {
+      try {
+        const state = await GovFix.getClockState();
+        if (state.is_frozen) {
+          await GovFix.advanceClock(0); // Calling advance or unfreeze
+          GovFix.showToast("Clock resumed.", "info");
+        } else {
+          await GovFix.freezeClock();
+          GovFix.showToast("Clock frozen for testing.", "warning");
+        }
+        await GovFix.updateHeaderClock();
+      } catch (err) {
+        GovFix.showErrorModal(err);
+      }
+    },
+
+    async resetClock() {
+      try {
+        await GovFix.resetClock();
+        GovFix.showToast("Clock reset to system time.", "info");
+        await GovFix.updateHeaderClock();
+        await this.loadOverview();
+      } catch (err) {
+        GovFix.showErrorModal(err);
+      }
+    }
+  };
+
+  document.addEventListener("DOMContentLoaded", () => {
+    SupervisorCommand.loadOverview();
+    window.addEventListener("govfix:persona-changed", () => SupervisorCommand.loadOverview());
+  });
+</script>
+{% endblock %}

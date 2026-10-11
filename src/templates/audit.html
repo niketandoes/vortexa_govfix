@@ -1,0 +1,255 @@
+{% extends "base.html" %}
+
+{% block header_actions %}
+<div class="flex items-center space-x-2">
+  <button onclick="AuditConsole.verifyChainIntegrity()" class="inline-flex items-center px-3 py-1.5 border border-emerald-300 text-xs font-semibold rounded-md text-emerald-800 bg-emerald-50 hover:bg-emerald-100 shadow-sm transition">
+    <svg class="w-3.5 h-3.5 mr-1.5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+    </svg>
+    Verify SHA-256 Chain
+  </button>
+  <button onclick="AuditConsole.loadAuditEvents()" class="inline-flex items-center px-3 py-1.5 border border-slate-300 text-xs font-medium rounded-md text-slate-700 bg-white hover:bg-slate-50 shadow-sm transition">
+    <svg class="w-3.5 h-3.5 mr-1.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+    </svg>
+    Refresh Audit Trail
+  </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <!-- Cryptographic Integrity Banner -->
+  <div id="integrity-banner" class="bg-white rounded-xl border border-emerald-200 shadow-sm p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+    <div class="flex items-center space-x-3">
+      <div class="w-9 h-9 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+        </svg>
+      </div>
+      <div>
+        <h3 class="text-sm font-bold text-slate-900" id="integrity-title">SHA-256 Cryptographic Hash Chain: Healthy</h3>
+        <p class="text-xs text-slate-500" id="integrity-subtitle">
+          Sequential hash verification confirms no records have been altered, skipped, or truncated.
+        </p>
+      </div>
+    </div>
+    <div class="text-right">
+      <span class="inline-flex items-center px-2.5 py-1 rounded text-xs font-mono font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200" id="integrity-badge">
+        CHAIN VALIDATED
+      </span>
+    </div>
+  </div>
+
+  <!-- Audit Summary Metrics -->
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+      <div class="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Total Audit Blocks</div>
+      <div class="text-2xl font-bold text-slate-900 mt-1 font-tabular" id="audit-metric-total">0</div>
+      <div class="text-xs text-slate-500 mt-0.5">Append-only log length</div>
+    </div>
+    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+      <div class="text-[11px] font-semibold uppercase tracking-wider text-emerald-600">Accepted Actions</div>
+      <div class="text-2xl font-bold text-emerald-700 mt-1 font-tabular" id="audit-metric-accepted">0</div>
+      <div class="text-xs text-slate-500 mt-0.5">Valid state transitions</div>
+    </div>
+    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+      <div class="text-[11px] font-semibold uppercase tracking-wider text-rose-600">Refused Actions</div>
+      <div class="text-2xl font-bold text-rose-700 mt-1 font-tabular" id="audit-metric-refused">0</div>
+      <div class="text-xs text-slate-500 mt-0.5">Policy violations logged</div>
+    </div>
+    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+      <div class="text-[11px] font-semibold uppercase tracking-wider text-indigo-600">Active Actors</div>
+      <div class="text-2xl font-bold text-indigo-700 mt-1 font-tabular" id="audit-metric-actors">0</div>
+      <div class="text-xs text-slate-500 mt-0.5">Citizens, officers, system</div>
+    </div>
+  </div>
+
+  <!-- Audit Events Table -->
+  <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+    <div class="bg-slate-50/80 px-5 py-3.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h2 class="text-sm font-semibold text-slate-900">Immutable Governance Audit Log</h2>
+        <p class="text-xs text-slate-500">Every submission, transition, reassignment, and policy refusal is permanently logged</p>
+      </div>
+
+      <!-- Filters -->
+      <div class="flex items-center space-x-2">
+        <label for="audit-filter" class="text-xs font-semibold text-slate-700">Filter:</label>
+        <select id="audit-filter" onchange="AuditConsole.applyFilter()" class="text-xs rounded-md border-slate-300 py-1 px-2 border bg-white">
+          <option value="all">All Events</option>
+          <option value="refused">Refusals Only (Violations)</option>
+          <option value="accepted">Accepted Actions Only</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="overflow-x-auto min-h-[350px]">
+      <div id="audit-loading" class="flex flex-col items-center justify-center py-16 text-slate-400">
+        <svg class="animate-spin h-6 w-6 text-slate-500 mb-2" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+        </svg>
+        <p class="text-xs">Fetching audit chain from database...</p>
+      </div>
+
+      <div id="audit-empty" class="hidden text-center py-16 px-4">
+        <div class="w-12 h-12 rounded-full bg-slate-100 text-slate-400 mx-auto flex items-center justify-center mb-3">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+        </div>
+        <h3 class="text-sm font-semibold text-slate-800">No Audit Events Recorded</h3>
+        <p class="text-xs text-slate-500 mt-1">Audit log is currently empty.</p>
+      </div>
+
+      <table id="audit-table" class="min-w-full divide-y divide-slate-200 hidden text-left text-xs">
+        <thead class="bg-slate-50 font-semibold text-slate-700">
+          <tr>
+            <th scope="col" class="px-3 py-3 font-mono">Seq</th>
+            <th scope="col" class="px-3 py-3">Timestamp (UTC)</th>
+            <th scope="col" class="px-3 py-3">Actor ID</th>
+            <th scope="col" class="px-3 py-3">Action / Operation</th>
+            <th scope="col" class="px-3 py-3">Request ID</th>
+            <th scope="col" class="px-3 py-3">Decision</th>
+            <th scope="col" class="px-4 py-3 font-mono text-right">Block Hash (SHA-256)</th>
+          </tr>
+        </thead>
+        <tbody id="audit-tbody" class="divide-y divide-slate-100 bg-white"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const AuditConsole = {
+    events: [],
+
+    async loadAuditEvents() {
+      const spinner = document.getElementById("audit-loading");
+      const emptyState = document.getElementById("audit-empty");
+      const table = document.getElementById("audit-table");
+
+      if (spinner) spinner.classList.remove("hidden");
+      if (emptyState) emptyState.classList.add("hidden");
+      if (table) table.classList.add("hidden");
+
+      try {
+        const response = await GovFix.getAuditLog();
+        const items = (response && response.items) ? response.items : (Array.isArray(response) ? response : []);
+        this.events = items;
+
+        this.updateMetrics(items);
+        this.applyFilter();
+
+        if (spinner) spinner.classList.add("hidden");
+      } catch (err) {
+        if (spinner) spinner.classList.add("hidden");
+        GovFix.showErrorModal(err);
+      }
+    },
+
+    updateMetrics(items) {
+      document.getElementById("audit-metric-total").textContent = items.length;
+      document.getElementById("audit-metric-accepted").textContent = items.filter(e => !e.is_refusal && e.decision !== "REFUSED").length;
+      document.getElementById("audit-metric-refused").textContent = items.filter(e => e.is_refusal || e.decision === "REFUSED").length;
+      
+      const actors = new Set(items.map(e => e.actor_id).filter(Boolean));
+      document.getElementById("audit-metric-actors").textContent = actors.size;
+    },
+
+    applyFilter() {
+      const filter = document.getElementById("audit-filter").value;
+      const emptyState = document.getElementById("audit-empty");
+      const table = document.getElementById("audit-table");
+      const tbody = document.getElementById("audit-tbody");
+
+      let filtered = this.events;
+      if (filter === "refused") {
+        filtered = filtered.filter(e => e.is_refusal || e.decision === "REFUSED");
+      } else if (filter === "accepted") {
+        filtered = filtered.filter(e => !e.is_refusal && e.decision !== "REFUSED");
+      }
+
+      if (filtered.length === 0) {
+        if (emptyState) emptyState.classList.remove("hidden");
+        if (table) table.classList.add("hidden");
+        return;
+      }
+
+      if (emptyState) emptyState.classList.add("hidden");
+      if (table) table.classList.remove("hidden");
+
+      tbody.innerHTML = filtered.map((ev, idx) => {
+        const isRefusal = ev.is_refusal || ev.decision === "REFUSED";
+        const decisionBadge = isRefusal
+          ? '<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">REFUSED</span>'
+          : '<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">ACCEPTED</span>';
+
+        const hash = ev.hash || ev.current_hash || "GENESIS_ROOT";
+        const hashShort = hash.length > 16 ? `${hash.substring(0, 8)}...${hash.substring(hash.length - 8)}` : hash;
+
+        return `
+          <tr class="hover:bg-slate-50 transition border-b border-slate-100 ${isRefusal ? 'bg-rose-50/30' : ''}">
+            <td class="px-3 py-3 font-mono text-slate-500 font-tabular text-[11px]">${ev.id || idx + 1}</td>
+            <td class="px-3 py-3 text-slate-600 font-mono text-[11px]">${GovFix.formatDate(ev.timestamp || ev.created_at)}</td>
+            <td class="px-3 py-3 font-mono font-semibold text-slate-800">${ev.actor_id || "SYSTEM"}</td>
+            <td class="px-3 py-3">
+              <span class="font-semibold text-slate-800">${ev.action || ev.event_type}</span>
+              ${ev.reason ? `<div class="text-[10px] text-slate-400 truncate max-w-xs">${ev.reason}</div>` : ''}
+            </td>
+            <td class="px-3 py-3 font-mono text-slate-700">${ev.request_id || "-"}</td>
+            <td class="px-3 py-3">${decisionBadge}</td>
+            <td class="px-4 py-3 text-right font-mono text-[11px] text-slate-500" title="${hash}">
+              <span class="bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">${hashShort}</span>
+            </td>
+          </tr>
+        `;
+      }).join("");
+    },
+
+    async verifyChainIntegrity() {
+      const banner = document.getElementById("integrity-banner");
+      const title = document.getElementById("integrity-title");
+      const subtitle = document.getElementById("integrity-subtitle");
+      const badge = document.getElementById("integrity-badge");
+
+      try {
+        const res = await GovFix.verifyAuditChain();
+        const verification = res.data || res;
+
+        if (verification.valid) {
+          if (banner) banner.className = "bg-white rounded-xl border border-emerald-200 shadow-sm p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3";
+          if (title) title.textContent = `SHA-256 Cryptographic Hash Chain: Healthy (${verification.total_records} Verified)`;
+          if (subtitle) subtitle.textContent = `Cryptographic SHA-256 chain verified end-to-end. Head: ${verification.chain_head ? verification.chain_head.substring(0, 16) + '...' : 'GENESIS'}`;
+          if (badge) {
+            badge.className = "inline-flex items-center px-2.5 py-1 rounded text-xs font-mono font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200";
+            badge.textContent = "CHAIN VALIDATED";
+          }
+          GovFix.showToast(`SHA-256 hash chain verified: ${verification.total_records} block(s) intact and tamper-free.`, "success");
+        } else {
+          if (banner) banner.className = "bg-red-50 rounded-xl border border-red-300 shadow-sm p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3";
+          if (title) title.textContent = `CRITICAL: Hash Chain Compromised at Block #${verification.compromised_id}`;
+          if (subtitle) subtitle.textContent = verification.reason || "Cryptographic integrity failure detected.";
+          if (badge) {
+            badge.className = "inline-flex items-center px-2.5 py-1 rounded text-xs font-mono font-semibold bg-red-100 text-red-800 border border-red-300 animate-pulse";
+            badge.textContent = "TAMPER DETECTED";
+          }
+          GovFix.showToast(`Audit chain tampering detected at block #${verification.compromised_id}!`, "error");
+        }
+      } catch (err) {
+        GovFix.showErrorModal(err);
+      }
+    }
+  };
+
+  document.addEventListener("DOMContentLoaded", () => {
+    AuditConsole.loadAuditEvents();
+    window.addEventListener("govfix:persona-changed", () => AuditConsole.loadAuditEvents());
+  });
+</script>
+{% endblock %}

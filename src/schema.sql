@@ -3,7 +3,7 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL CHECK(length(trim(name)) > 0),
-    role TEXT NOT NULL CHECK(role IN ('Citizen', 'Officer', 'Supervisor')),
+    role TEXT NOT NULL CHECK(role IN ('Citizen', 'Officer', 'Field Officer', 'Supervisor', 'Audit Inspector')),
     email TEXT UNIQUE NOT NULL CHECK(length(trim(email)) > 0),
     department TEXT,
     created_at TEXT NOT NULL
@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS requests (
     citizen_id TEXT NOT NULL,
     title TEXT NOT NULL CHECK(length(trim(title)) > 0),
     text TEXT NOT NULL CHECK(length(trim(text)) > 0),
+    location TEXT,
     reported_category TEXT CHECK(
         reported_category IS NULL OR reported_category IN (
             'Water Leak', 'Garbage Collection', 'Streetlight', 'Pothole'
@@ -26,12 +27,16 @@ CREATE TABLE IF NOT EXISTS requests (
         )
     ),
     state TEXT NOT NULL CHECK(state IN (
-        'SUBMITTED', 'ACKNOWLEDGED', 'ASSIGNED', 'IN_PROGRESS',
+        'SUBMITTED', 'ACKNOWLEDGED', 'NEEDS_INFO', 'ASSIGNED', 'IN_PROGRESS',
         'RESOLVED', 'CLOSED', 'REJECTED', 'REOPENED'
     )),
     assigned_to TEXT,
     rejection_reason TEXT,
     resolution_notes TEXT,
+    info_request_note TEXT,
+    additional_info TEXT,
+    paused_at TEXT,
+    total_paused_seconds INTEGER NOT NULL DEFAULT 0 CHECK(total_paused_seconds >= 0),
     escalation_level INTEGER NOT NULL DEFAULT 0 CHECK(escalation_level IN (0, 1, 2)),
     sla_started_at TEXT NOT NULL,
     sla_cycle INTEGER NOT NULL DEFAULT 1 CHECK(sla_cycle >= 1),
@@ -62,7 +67,7 @@ CREATE TABLE IF NOT EXISTS audit (
     timestamp TEXT NOT NULL,
     simulated_at TEXT,
     actor TEXT NOT NULL,
-    actor_role TEXT NOT NULL CHECK(actor_role IN ('Citizen', 'Officer', 'Supervisor', 'System')),
+    actor_role TEXT NOT NULL CHECK(actor_role IN ('Citizen', 'Officer', 'Field Officer', 'Supervisor', 'Audit Inspector', 'System')),
     action TEXT NOT NULL CHECK(length(trim(action)) > 0),
     request_id TEXT NOT NULL,
     from_state TEXT,
@@ -101,9 +106,9 @@ BEGIN
     SELECT CASE
         WHEN NOT EXISTS (
             SELECT 1 FROM users
-            WHERE id = NEW.assigned_to AND role = 'Officer'
+            WHERE id = NEW.assigned_to AND role IN ('Officer', 'Field Officer')
         )
-        THEN RAISE(ABORT, 'assigned_to must reference an Officer')
+        THEN RAISE(ABORT, 'assigned_to must reference an Officer or Field Officer')
     END;
 END;
 
@@ -114,9 +119,9 @@ BEGIN
     SELECT CASE
         WHEN NOT EXISTS (
             SELECT 1 FROM users
-            WHERE id = NEW.assigned_to AND role = 'Officer'
+            WHERE id = NEW.assigned_to AND role IN ('Officer', 'Field Officer')
         )
-        THEN RAISE(ABORT, 'assigned_to must reference an Officer')
+        THEN RAISE(ABORT, 'assigned_to must reference an Officer or Field Officer')
     END;
 END;
 
