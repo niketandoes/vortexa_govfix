@@ -139,6 +139,10 @@ const GovFix = (function () {
     });
   }
 
+  async function getRequestSuggestions(requestId) {
+    return apiRequest(`/api/v1/requests/${requestId}/suggestions`);
+  }
+
   async function confirmCategory(requestId, category, expectedVersion) {
     return apiRequest(`/api/v1/requests/${requestId}/category`, {
       method: "POST",
@@ -265,6 +269,60 @@ const GovFix = (function () {
     return {
       text: `${diffHours}h remaining`,
       class: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    };
+  }
+
+  function formatTriageRemaining(triageDeadlineIso, triagedAtIso) {
+    if (triagedAtIso) {
+      return {
+        text: "Triage Done",
+        class: "bg-emerald-50 text-emerald-700 border-emerald-200",
+        isBreached: false,
+        isCompleted: true,
+      };
+    }
+    if (!triageDeadlineIso) {
+      return {
+        text: "No Triage SLA",
+        class: "bg-slate-100 text-slate-500 border-slate-200",
+        isBreached: false,
+        isCompleted: false,
+      };
+    }
+    const now = new Date();
+    const deadline = new Date(triageDeadlineIso);
+    const diffMs = deadline - now;
+    const diffMinutes = Math.round(diffMs / (1000 * 60));
+
+    if (diffMs <= 0) {
+      const overdueMins = Math.abs(diffMinutes);
+      const overdueText = overdueMins >= 60 ? `${Math.floor(overdueMins / 60)}h ${overdueMins % 60}m overdue` : `${overdueMins}m overdue`;
+      return {
+        text: `Triage Breached (${overdueText})`,
+        class: "bg-red-100 text-red-900 border-red-300 font-semibold",
+        isBreached: true,
+        isCompleted: false,
+      };
+    }
+
+    if (diffMinutes <= 30) {
+      return {
+        text: `Triage Due in ${diffMinutes}m`,
+        class: "bg-amber-100 text-amber-900 border-amber-300 font-semibold",
+        isBreached: false,
+        isAtRisk: true,
+        isCompleted: false,
+      };
+    }
+
+    const hours = Math.floor(diffMinutes / 60);
+    const mins = diffMinutes % 60;
+    const remText = hours > 0 ? `${hours}h ${mins}m left` : `${mins}m left`;
+    return {
+      text: `Triage: ${remText}`,
+      class: "bg-blue-50 text-blue-800 border-blue-200 font-medium",
+      isBreached: false,
+      isCompleted: false,
     };
   }
 
@@ -442,6 +500,7 @@ const GovFix = (function () {
     getRequest,
     getRequestHistory,
     getAdvisoryPreview,
+    getRequestSuggestions,
     createRequest,
     transitionRequest,
     confirmCategory,
@@ -455,6 +514,7 @@ const GovFix = (function () {
     formatDate,
     formatTimeAgo,
     formatSLARemaining,
+    formatTriageRemaining,
     statusBadge,
     categoryBadge,
     escalationBadge,

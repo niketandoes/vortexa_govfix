@@ -40,7 +40,12 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="GovFix", version="0.1.0", lifespan=lifespan)
 
-STATIC_DIR = Path(__file__).resolve().parent / "static"
+FRONTEND_STATIC_DIR = Path(__file__).resolve().parents[1] / "frontend" / "static"
+STATIC_DIR = (
+    FRONTEND_STATIC_DIR
+    if FRONTEND_STATIC_DIR.exists()
+    else Path(__file__).resolve().parent / "static"
+)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 app.include_router(requests_router)

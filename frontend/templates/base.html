@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-50">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="GovFix - Municipal Grievance Redressal and Workflow Management System">
+  <title>{{ page_title }} - GovFix Municipal Grievance</title>
+  
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            gov: {
+              navy: '#0f172a',
+              blue: '#1e3a8a',
+              indigo: '#312e81',
+              amber: '#b45309',
+              emerald: '#047857',
+              rose: '#be123c',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- GovTech System Stylesheet -->
+  <link rel="stylesheet" href="/static/styles.css">
+  {% block head_extra %}{% endblock %}
+</head>
+<body class="min-h-full flex flex-col font-sans text-slate-800 bg-slate-100/60 antialiased">
+
+  <!-- Tricolor Accent Banner -->
+  <div class="gov-tricolor-strip w-full"></div>
+
+  <!-- Primary Government Navigation Bar -->
+  <header class="bg-slate-900 text-slate-100 border-b border-slate-800 shadow-md sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16">
+        
+        <!-- Left: Emblem & System Brand -->
+        <div class="flex items-center space-x-3">
+          <a href="/citizen" class="flex items-center space-x-3 group">
+            <div class="w-9 h-9 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-amber-400 group-hover:border-amber-500/50 transition">
+              <!-- Municipal Emblem SVG -->
+              <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+              </svg>
+            </div>
+            <div>
+              <div class="flex items-center space-x-1.5">
+                <span class="font-bold text-base tracking-tight text-white group-hover:text-amber-300 transition">GovFix</span>
+                <span class="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.2 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded">Civic Redress</span>
+              </div>
+              <p class="text-[11px] text-slate-400 leading-none">Municipal Grievance Workflow System</p>
+            </div>
+          </a>
+        </div>
+
+        <!-- Center: 5 Persistent Role Navigation Links (Full-Page Reloads) -->
+        <nav class="hidden md:flex items-center space-x-1" aria-label="Role Navigation">
+          <a href="/citizen"
+             class="px-3 py-2 rounded-md text-xs font-medium transition flex items-center space-x-1.5 {% if active_page == 'citizen' %}bg-slate-800 text-white font-semibold shadow-inner border-b-2 border-amber-400{% else %}text-slate-300 hover:text-white hover:bg-slate-800/60{% endif %}"
+             id="nav-citizen">
+            <span>Citizen Portal</span>
+          </a>
+
+          <a href="/officer"
+             class="px-3 py-2 rounded-md text-xs font-medium transition flex items-center space-x-1.5 {% if active_page == 'officer' %}bg-slate-800 text-white font-semibold shadow-inner border-b-2 border-amber-400{% else %}text-slate-300 hover:text-white hover:bg-slate-800/60{% endif %}"
+             id="nav-officer">
+            <span>Triage Intake</span>
+          </a>
+
+          <a href="/field-officer"
+             class="px-3 py-2 rounded-md text-xs font-medium transition flex items-center space-x-1.5 {% if active_page == 'field-officer' %}bg-slate-800 text-white font-semibold shadow-inner border-b-2 border-amber-400{% else %}text-slate-300 hover:text-white hover:bg-slate-800/60{% endif %}"
+             id="nav-field-officer">
+            <span>Field Work Orders</span>
+          </a>
+
+          <a href="/supervisor"
+             class="px-3 py-2 rounded-md text-xs font-medium transition flex items-center space-x-1.5 {% if active_page == 'supervisor' %}bg-slate-800 text-white font-semibold shadow-inner border-b-2 border-amber-400{% else %}text-slate-300 hover:text-white hover:bg-slate-800/60{% endif %}"
+             id="nav-supervisor">
+            <span>Supervisor Command</span>
+          </a>
+
+          <a href="/audit"
+             class="px-3 py-2 rounded-md text-xs font-medium transition flex items-center space-x-1.5 {% if active_page == 'audit' %}bg-slate-800 text-white font-semibold shadow-inner border-b-2 border-amber-400{% else %}text-slate-300 hover:text-white hover:bg-slate-800/60{% endif %}"
+             id="nav-audit">
+            <span>Audit Trail</span>
+          </a>
+        </nav>
+
+        <!-- Right: Simulated Clock & Persona Switcher -->
+        <div class="flex items-center space-x-3">
+          
+          <!-- Simulated Clock Display Pill -->
+          <div class="hidden lg:flex items-center space-x-1.5 px-2.5 py-1 rounded bg-slate-800/90 border border-slate-700 text-slate-300" title="Simulated Municipal Clock">
+            <svg class="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span id="header-clock-display" class="font-mono text-[11px] text-slate-200 font-medium">Syncing Clock...</span>
+          </div>
+
+          <!-- Actor Identity Dropdown (X-Actor-ID client-side demo selector) -->
+          <div class="flex items-center space-x-2 pl-2 border-l border-slate-800">
+            <div class="text-right hidden sm:block">
+              <div id="header-actor-name" class="text-xs font-semibold text-slate-200 leading-tight">Loading Persona...</div>
+              <div class="flex items-center justify-end space-x-1">
+                <span id="header-actor-role" class="text-[10px] text-amber-400 font-medium">Citizen</span>
+                <span class="text-[9px] text-slate-500 font-mono" id="header-actor-id">USR-CIT-01</span>
+              </div>
+            </div>
+
+            <div class="relative">
+              <select id="header-persona-select"
+                      aria-label="Demo Persona Switcher"
+                      class="text-xs font-medium bg-slate-800 text-slate-200 border border-slate-700 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-500 hover:bg-slate-700/80 cursor-pointer">
+                {% for p in personas %}
+                <option value="{{ p.id }}" {% if p.id == default_actor_id %}selected{% endif %}>
+                  {{ p.name }} ({{ p.badge }})
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- Mobile Sub-Navigation -->
+    <div class="md:hidden border-t border-slate-800 px-3 py-2 flex items-center justify-between overflow-x-auto gap-2">
+      <a href="/citizen" class="text-xs px-2 py-1 rounded {% if active_page == 'citizen' %}bg-slate-800 text-amber-400 font-bold{% else %}text-slate-400{% endif %}">Citizen</a>
+      <a href="/officer" class="text-xs px-2 py-1 rounded {% if active_page == 'officer' %}bg-slate-800 text-amber-400 font-bold{% else %}text-slate-400{% endif %}">Officer</a>
+      <a href="/field-officer" class="text-xs px-2 py-1 rounded {% if active_page == 'field-officer' %}bg-slate-800 text-amber-400 font-bold{% else %}text-slate-400{% endif %}">Field</a>
+      <a href="/supervisor" class="text-xs px-2 py-1 rounded {% if active_page == 'supervisor' %}bg-slate-800 text-amber-400 font-bold{% else %}text-slate-400{% endif %}">Supervisor</a>
+      <a href="/audit" class="text-xs px-2 py-1 rounded {% if active_page == 'audit' %}bg-slate-800 text-amber-400 font-bold{% else %}text-slate-400{% endif %}">Audit</a>
+    </div>
+  </header>
+
+  <!-- Page Header Container -->
+  <div class="bg-white border-b border-slate-200 shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
+      <div class="md:flex md:items-center md:justify-between">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center space-x-2.5">
+            <h1 class="text-xl sm:text-2xl font-bold leading-7 text-slate-900 tracking-tight" id="page-heading">
+              {{ page_title }}
+            </h1>
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-300 uppercase tracking-wider">
+              {{ default_persona_role }}
+            </span>
+          </div>
+          <p class="mt-1 text-xs sm:text-sm text-slate-500 max-w-3xl leading-relaxed">
+            {{ page_subtitle }}
+          </p>
+        </div>
+        <div class="mt-4 flex md:mt-0 md:ml-4 items-center space-x-3">
+          {% block header_actions %}{% endblock %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Primary Page Body -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- Global Municipal Footer -->
+  <footer class="bg-white border-t border-slate-200 py-4 mt-auto">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-2">
+      <div class="flex items-center space-x-2">
+        <span class="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
+        <span>Deterministic Workflow Engine &middot; SHA-256 Audit Trail Active</span>
+      </div>
+      <div>
+        <span>GovFix Municipal Redressal MVP &middot; Statutory SLA Enforcement</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Toast Notification Container -->
+  <div id="govfix-toast-container"></div>
+
+  <!-- Shared App JS Client -->
+  <script src="/static/app.js"></script>
+
+  <script>
+    // Ensure active persona matches page or defaults cleanly
+    document.addEventListener("DOMContentLoaded", () => {
+      const stored = localStorage.getItem("govfix_actor_id");
+      if (!stored) {
+        GovFix.setActorId("{{ default_actor_id }}");
+      } else {
+        GovFix.initHeaderControls();
+      }
+    });
+  </script>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>

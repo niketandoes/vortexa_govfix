@@ -20,7 +20,11 @@ dev = ["pytest>=8.3,<9.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 addopts = "-q"
+
+[tool.pyright]
+extraPaths = ["."]
 
 [tool.setuptools.packages.find]
 include = ["src*"]

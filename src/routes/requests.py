@@ -157,6 +157,44 @@ def preview_advisory(
     return {"success": True, "data": suggestion.model_dump()}
 
 
+@router.get("/requests/{request_id}/suggestions")
+def get_request_suggestions(
+    request_id: str,
+    actor_id: ActorId,
+    workflow: Workflow,
+    connection: Connection,
+) -> dict:
+    from src.ai.local_classifier import LocalClassifier
+    from src.services.suggestion_service import (
+        SQLiteSuggestionRepository,
+        SuggestionService,
+    )
+
+    req = workflow.get_request(request_id=request_id, actor_id=actor_id)
+    repo = SQLiteSuggestionRepository(connection=connection)
+    service = SuggestionService(repository=repo)
+    stored = service.get_suggestions_for_request(request_id)
+
+    full_text = f"{req.get('title', '')}. {req.get('text', '')}".strip()
+    if not stored:
+        suggestion = service.generate_and_store_suggestions(
+            request_id=request_id,
+            complaint_text=full_text,
+        )
+        stored = service.get_suggestions_for_request(request_id)
+        recommendation = suggestion.model_dump()
+    else:
+        recommendation = LocalClassifier().suggest(full_text).model_dump()
+
+    return {
+        "success": True,
+        "data": {
+            "stored": stored,
+            "recommendation": recommendation,
+        },
+    }
+
+
 @router.get("/requests")
 def list_requests(
     actor_id: ActorId,

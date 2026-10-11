@@ -1,0 +1,1334 @@
+{% extends "base.html" %}
+
+{% block header_actions %}
+<div class="flex items-center space-x-2">
+  <button onclick="CitizenPortal.loadRequests()" class="inline-flex items-center px-3 py-1.5 border border-slate-300 text-xs font-semibold rounded-lg text-slate-700 bg-white hover:bg-slate-50 shadow-sm transition">
+    <svg class="w-3.5 h-3.5 mr-1.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+    </svg>
+    Refresh Tracker
+  </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <!-- Overview Stats Banner -->
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+    <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Complaints</span>
+        <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+      </div>
+      <div class="mt-2 flex items-baseline justify-between">
+        <span id="stat-total" class="text-2xl font-bold text-slate-900 font-tabular">0</span>
+        <span class="text-[11px] text-slate-400">All Time</span>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">In Progress</span>
+        <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+      </div>
+      <div class="mt-2 flex items-baseline justify-between">
+        <span id="stat-active" class="text-2xl font-bold text-indigo-700 font-tabular">0</span>
+        <span class="text-[11px] text-slate-400">Under Action</span>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Action Needed</span>
+        <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+      </div>
+      <div class="mt-2 flex items-baseline justify-between">
+        <span id="stat-action-needed" class="text-2xl font-bold text-amber-600 font-tabular">0</span>
+        <span class="text-[11px] text-amber-600 font-medium">Citizen Input</span>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Resolved / Closed</span>
+        <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+      </div>
+      <div class="mt-2 flex items-baseline justify-between">
+        <span id="stat-resolved" class="text-2xl font-bold text-emerald-700 font-tabular">0</span>
+        <span class="text-[11px] text-emerald-600 font-medium">Completed</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Grid: Submission Form (Left) & Tracker (Right) -->
+  <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+    <!-- Left Column: Grievance Submission Card -->
+    <div class="lg:col-span-5 space-y-5">
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="bg-slate-900 px-5 py-4 border-b border-slate-800 flex items-center justify-between text-white">
+          <div class="flex items-center space-x-2.5">
+            <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
+            <div>
+              <h2 class="text-sm font-bold text-white tracking-tight">Lodge Municipal Grievance</h2>
+              <p class="text-[11px] text-slate-400">Directly registered to municipal department</p>
+            </div>
+          </div>
+          <span class="text-[10px] font-mono uppercase bg-slate-800 text-amber-300 px-2 py-0.5 rounded border border-slate-700">Official Intake</span>
+        </div>
+
+        <!-- Success Alert (Dynamic) -->
+        <div id="submission-success-banner" class="hidden m-4 p-4 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 space-y-2">
+          <div class="flex items-center space-x-2">
+            <svg class="w-5 h-5 text-emerald-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <h4 class="text-xs font-bold text-emerald-900">Grievance Registered Successfully</h4>
+          </div>
+          <p class="text-xs text-emerald-800">
+            Complaint tracking ID: <strong id="success-complaint-id" class="font-mono text-emerald-900 bg-emerald-100 px-1.5 py-0.5 rounded"></strong>
+          </p>
+          <div class="text-[11px] text-emerald-700">
+            A permanent SHA-256 audit entry has been generated. You can track resolution below.
+          </div>
+        </div>
+
+        <form id="grievance-form" class="p-5 space-y-4" onsubmit="CitizenPortal.submitGrievance(event)">
+          <!-- Title -->
+          <div>
+            <div class="flex justify-between items-center mb-1">
+              <label for="grievance-title" class="block text-xs font-semibold text-slate-700">
+                Complaint Title <span class="text-red-500">*</span>
+              </label>
+              <span id="title-char-count" class="text-[10px] text-slate-400 font-mono">0 / 120</span>
+            </div>
+            <input type="text"
+                   id="grievance-title"
+                   name="title"
+                   required
+                   minlength="5"
+                   maxlength="120"
+                   placeholder="e.g. Broken water pipe leaking near main market gate"
+                   oninput="CitizenPortal.handleFormInput()"
+                   class="w-full text-xs sm:text-sm rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 py-2 px-3 border" />
+            <p id="title-error" class="hidden text-[11px] text-red-600 mt-1">Please provide a descriptive title (at least 5 characters).</p>
+          </div>
+
+          <!-- Location -->
+          <div>
+            <label for="grievance-location" class="block text-xs font-semibold text-slate-700 mb-1">
+              Location / Street / Landmark
+            </label>
+            <div class="relative">
+              <input type="text"
+                     id="grievance-location"
+                     name="location"
+                     maxlength="500"
+                     placeholder="e.g. Ward 4, Opposite State Bank ATM, M.G. Road"
+                     class="w-full text-xs sm:text-sm rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 py-2 pl-8 pr-3 border" />
+              <svg class="w-4 h-4 text-slate-400 absolute left-2.5 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </div>
+            <p class="text-[10px] text-slate-400 mt-1">Specifying precise landmarks expedites field officer dispatch.</p>
+          </div>
+
+          <!-- Category -->
+          <div>
+            <label for="grievance-category" class="block text-xs font-semibold text-slate-700 mb-1">
+              Category <span class="text-slate-400 font-normal">(Optional — Triage Officer will confirm)</span>
+            </label>
+            <select id="grievance-category"
+                    name="reported_category"
+                    class="w-full text-xs sm:text-sm rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 py-2 px-3 border bg-white">
+              <option value="">-- Let Triage Classify (Recommended) --</option>
+              <option value="Water Leak">Water Leak (24h SLA)</option>
+              <option value="Garbage Collection">Garbage Collection (48h SLA)</option>
+              <option value="Streetlight">Streetlight Failure (72h SLA)</option>
+              <option value="Pothole">Pothole &amp; Road Damage (168h / 7d SLA)</option>
+            </select>
+          </div>
+
+          <!-- Description -->
+          <div>
+            <div class="flex justify-between items-center mb-1">
+              <label for="grievance-text" class="block text-xs font-semibold text-slate-700">
+                Detailed Description <span class="text-red-500">*</span>
+              </label>
+              <span id="text-char-count" class="text-[10px] text-slate-400 font-mono">0 / 2000</span>
+            </div>
+            <textarea id="grievance-text"
+                      name="text"
+                      rows="4"
+                      required
+                      minlength="10"
+                      maxlength="2000"
+                      placeholder="Describe the problem, severity, duration, and any hazards to pedestrians or traffic..."
+                      oninput="CitizenPortal.handleFormInput()"
+                      class="w-full text-xs sm:text-sm rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 py-2 px-3 border"></textarea>
+            <p id="text-error" class="hidden text-[11px] text-red-600 mt-1">Description must be at least 10 characters long.</p>
+          </div>
+
+          <!-- AI Advisory Preview Pane (Non-blocking Heuristic / AI Suggestion) -->
+          <div id="ai-advisory-container" class="hidden rounded-xl border border-indigo-100 bg-indigo-50/70 p-3.5 space-y-2.5 transition">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center space-x-1.5 text-indigo-900 font-semibold text-xs">
+                <svg class="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                <span>AI Advisory Preview</span>
+              </div>
+              <span id="advisory-urgency-badge" class="px-2 py-0.5 rounded text-[10px] font-bold font-mono uppercase bg-indigo-200 text-indigo-900">Assessing</span>
+            </div>
+
+            <p class="text-[11px] text-indigo-800 leading-relaxed">
+              Based on your description, here are non-binding suggestions to help speed up processing:
+            </p>
+
+            <div class="space-y-1.5 text-xs">
+              <!-- Category Suggestion -->
+              <div id="advisory-cat-row" class="hidden flex items-center justify-between bg-white/80 p-2 rounded border border-indigo-100">
+                <span class="text-slate-600">Suggested Category: <strong id="advisory-cat-text" class="text-indigo-900"></strong></span>
+                <button type="button" onclick="CitizenPortal.applySuggestedCategory()" class="px-2 py-0.5 text-[11px] font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded transition">
+                  Apply
+                </button>
+              </div>
+
+              <!-- Location Suggestion -->
+              <div id="advisory-loc-row" class="hidden flex items-center justify-between bg-white/80 p-2 rounded border border-indigo-100">
+                <span class="text-slate-600">Extracted Location: <strong id="advisory-loc-text" class="text-indigo-900"></strong></span>
+                <button type="button" onclick="CitizenPortal.applySuggestedLocation()" class="px-2 py-0.5 text-[11px] font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded transition">
+                  Use
+                </button>
+              </div>
+            </div>
+
+            <p class="text-[10px] text-indigo-500 italic">
+              Advisory only. You have full control over your final submission.
+            </p>
+          </div>
+
+          <!-- Statutory SLA Note -->
+          <div class="bg-slate-50 border border-slate-200 rounded-lg p-3 text-[11px] text-slate-600 flex items-start space-x-2">
+            <svg class="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p class="leading-relaxed">
+              Statutory municipal SLA clocks start upon registration. All transitions, field updates, and citizen actions are permanently preserved in a cryptographically sealed audit chain.
+            </p>
+          </div>
+
+          <!-- Submit Button -->
+          <button type="submit"
+                  id="btn-submit-grievance"
+                  class="w-full flex justify-center items-center py-2.5 px-4 rounded-lg shadow-sm text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 transition disabled:opacity-50 disabled:cursor-not-allowed">
+            <span id="btn-submit-spinner" class="hidden mr-2">
+              <svg class="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+              </svg>
+            </span>
+            <span id="btn-submit-text">Register Grievance</span>
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Right Column: My Complaints Tracker -->
+    <div class="lg:col-span-7 space-y-4">
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        
+        <!-- Header & Search/Filter Controls -->
+        <div class="bg-slate-50/90 p-4 border-b border-slate-200 space-y-3">
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div>
+              <h2 class="text-sm font-bold text-slate-900">Registered Complaints Tracker</h2>
+              <p class="text-xs text-slate-500">Live operational status, field assignments, and SLA deadlines</p>
+            </div>
+            <span id="requests-count-badge" class="self-start sm:self-auto px-2.5 py-0.5 text-xs font-mono font-semibold rounded-full bg-slate-200 text-slate-700">0 Records</span>
+          </div>
+
+          <!-- Search Input & Quick Status Filter Pills -->
+          <div class="flex flex-col sm:flex-row gap-2">
+            <div class="relative flex-1">
+              <input type="text"
+                     id="search-input"
+                     placeholder="Search by ID, keyword, or location..."
+                     oninput="CitizenPortal.handleSearch(this.value)"
+                     class="w-full text-xs rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 pl-8 pr-3 py-1.5 border" />
+              <svg class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
+
+            <!-- Status Tabs Dropdown / Pill selector -->
+            <select id="status-filter-select"
+                    onchange="CitizenPortal.handleFilterChange(this.value)"
+                    class="text-xs rounded-lg border-slate-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 py-1.5 px-3 border bg-white text-slate-700">
+              <option value="ALL">All Statuses</option>
+              <option value="ACTIVE">Active (In Action)</option>
+              <option value="NEEDS_INFO">Needs Information</option>
+              <option value="RESOLVED">Resolved (Pending Confirmation)</option>
+              <option value="CLOSED">Closed</option>
+              <option value="REOPENED">Disputed / Reopened</option>
+              <option value="REJECTED">Rejected</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Requests List Container -->
+        <div id="requests-list-container" class="p-4 min-h-[360px]">
+          <!-- Loading State -->
+          <div id="loading-spinner" class="flex flex-col items-center justify-center py-16 text-slate-400">
+            <svg class="animate-spin h-7 w-7 text-amber-500 mb-2" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+            </svg>
+            <p class="text-xs font-medium text-slate-500">Querying municipal ledger...</p>
+          </div>
+
+          <!-- Empty State (No complaints lodged) -->
+          <div id="empty-state" class="hidden text-center py-16 px-4">
+            <div class="w-12 h-12 rounded-full bg-slate-100 text-slate-400 mx-auto flex items-center justify-center mb-3">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+            <h3 class="text-sm font-semibold text-slate-800">No Complaints Recorded</h3>
+            <p class="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+              You currently have no registered municipal grievances under this citizen account. Lodge a complaint using the form on the left.
+            </p>
+          </div>
+
+          <!-- Empty State (No filter matches) -->
+          <div id="no-match-state" class="hidden text-center py-12 px-4">
+            <p class="text-xs font-semibold text-slate-700">No complaints match your active filters.</p>
+            <button onclick="CitizenPortal.resetFilters()" class="mt-2 text-xs text-amber-600 hover:text-amber-700 font-medium underline">
+              Clear search &amp; filters
+            </button>
+          </div>
+
+          <!-- Request Items Container -->
+          <div id="requests-items" class="space-y-3"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- Modal: Complete Complaint Detail View & Audit Timeline Stepper             -->
+<!-- ========================================================================= -->
+<div id="detail-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-backdrop">
+  <div class="bg-white rounded-xl shadow-2xl max-w-2xl w-full border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+    <!-- Modal Header -->
+    <div class="bg-slate-900 text-white px-6 py-4 flex items-center justify-between border-b border-slate-800">
+      <div class="flex items-center space-x-3">
+        <span id="detail-modal-id" class="font-mono text-sm font-bold text-amber-400">REQ-XXXX</span>
+        <span id="detail-modal-status-badge"></span>
+      </div>
+      <button onclick="GovFix.closeModal('detail-modal')" class="text-slate-400 hover:text-white font-bold text-lg leading-none">&times;</button>
+    </div>
+
+    <!-- Modal Body (Scrollable) -->
+    <div class="p-6 overflow-y-auto space-y-6 flex-1 text-slate-800 text-xs">
+      
+      <!-- Stepper: Visual Workflow Progress -->
+      <div>
+        <h4 class="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3">Workflow Lifecycle Progress</h4>
+        <div id="detail-stepper-container" class="flex items-center justify-between border border-slate-200 rounded-lg p-3 bg-slate-50/70">
+          <!-- Stepper items injected via JS -->
+        </div>
+
+        <!-- Exceptional State Banners (Injected dynamically) -->
+        <div id="detail-exceptional-banner" class="mt-3"></div>
+      </div>
+
+      <!-- Complaint Core Attributes Grid -->
+      <div class="bg-white border border-slate-200 rounded-lg p-4 space-y-3">
+        <h3 id="detail-modal-title" class="text-sm font-bold text-slate-900"></h3>
+        <p id="detail-modal-text" class="text-xs text-slate-600 whitespace-pre-wrap leading-relaxed"></p>
+
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-3 border-t border-slate-100 text-[11px]">
+          <div>
+            <span class="text-slate-400 block font-medium">Category</span>
+            <span id="detail-modal-category" class="font-semibold text-slate-800"></span>
+          </div>
+          <div>
+            <span class="text-slate-400 block font-medium">Location</span>
+            <span id="detail-modal-location" class="font-semibold text-slate-800"></span>
+          </div>
+          <div>
+            <span class="text-slate-400 block font-medium">SLA Deadline</span>
+            <span id="detail-modal-deadline" class="font-semibold font-tabular text-slate-800"></span>
+          </div>
+          <div>
+            <span class="text-slate-400 block font-medium">Registered Date</span>
+            <span id="detail-modal-created" class="font-semibold font-tabular text-slate-800"></span>
+          </div>
+          <div>
+            <span class="text-slate-400 block font-medium">Assigned Officer</span>
+            <span id="detail-modal-assigned" class="font-semibold text-slate-800 font-mono"></span>
+          </div>
+          <div>
+            <span class="text-slate-400 block font-medium">Audit Record Version</span>
+            <span id="detail-modal-version" class="font-semibold text-slate-800 font-mono">v1</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Audit History Timeline -->
+      <div>
+        <div class="flex items-center justify-between mb-2">
+          <h4 class="text-xs font-bold text-slate-900 uppercase tracking-wider">Citizen-Safe Event History</h4>
+          <span class="text-[10px] text-emerald-700 font-semibold flex items-center">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1"></span>
+            Verified Audit Log
+          </span>
+        </div>
+        <div id="detail-history-container" class="border border-slate-200 rounded-lg divide-y divide-slate-100 bg-white">
+          <!-- History events injected dynamically -->
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Modal Footer Actions -->
+    <div id="detail-modal-footer" class="bg-slate-50 px-6 py-3 border-t border-slate-200 flex items-center justify-between">
+      <button onclick="GovFix.closeModal('detail-modal')" class="px-3 py-1.5 border border-slate-300 rounded text-xs text-slate-700 hover:bg-slate-100 font-medium">
+        Dismiss
+      </button>
+      <div id="detail-modal-action-buttons" class="flex items-center space-x-2">
+        <!-- Contextual actions (Provide info, Confirm close, Dispute, Reopen) -->
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- Modal: Provide Missing Information (NEEDS_INFO -> ACKNOWLEDGED)            -->
+<!-- ========================================================================= -->
+<div id="info-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-backdrop">
+  <div class="bg-white rounded-xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden">
+    <div class="bg-amber-500 text-white px-5 py-4 flex items-center justify-between">
+      <h3 class="text-sm font-bold flex items-center space-x-1.5">
+        <span>⚠️</span>
+        <span>Provide Requested Clarification</span>
+      </h3>
+      <button class="text-white hover:text-amber-100 font-bold" onclick="GovFix.closeModal('info-modal')">&times;</button>
+    </div>
+    <form id="info-form" class="p-5 space-y-4" onsubmit="CitizenPortal.submitAdditionalInfo(event)">
+      <input type="hidden" id="info-request-id" />
+      <input type="hidden" id="info-version" />
+
+      <div class="bg-amber-50 border border-amber-200 rounded p-3 text-xs text-amber-900 space-y-1">
+        <span class="font-semibold block text-[11px] uppercase tracking-wider text-amber-800">Officer Request Note:</span>
+        <p id="info-officer-note" class="italic"></p>
+      </div>
+
+      <div>
+        <label for="info-response-text" class="block text-xs font-semibold text-slate-700 mb-1">
+          Your Response / Additional Details <span class="text-red-500">*</span>
+        </label>
+        <textarea id="info-response-text"
+                  rows="4"
+                  required
+                  minlength="5"
+                  placeholder="Provide the exact landmark, house number, or clarification requested by the officer..."
+                  class="w-full text-xs rounded-lg border-slate-300 shadow-sm border p-2.5 focus:border-amber-500 focus:ring-amber-500"></textarea>
+      </div>
+
+      <div class="text-[11px] text-slate-500">
+        Submitting this form transitions your complaint back to <strong>Under Review</strong> and safely resumes the SLA clock.
+      </div>
+
+      <div class="flex justify-end space-x-2 pt-2 border-t border-slate-100">
+        <button type="button" class="px-3 py-1.5 border border-slate-300 rounded text-xs font-medium text-slate-700 hover:bg-slate-50" onclick="GovFix.closeModal('info-modal')">
+          Cancel
+        </button>
+        <button type="submit" id="btn-submit-info" class="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-semibold shadow-sm transition">
+          Submit &amp; Resume SLA
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- Modal: Confirm Resolution (RESOLVED -> CLOSED)                            -->
+<!-- ========================================================================= -->
+<div id="confirm-close-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-backdrop">
+  <div class="bg-white rounded-xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden">
+    <div class="bg-emerald-600 text-white px-5 py-4 flex items-center justify-between">
+      <h3 class="text-sm font-bold flex items-center space-x-1.5">
+        <span>✓</span>
+        <span>Confirm Satisfactory Resolution</span>
+      </h3>
+      <button class="text-white hover:text-emerald-100 font-bold" onclick="GovFix.closeModal('confirm-close-modal')">&times;</button>
+    </div>
+    <div class="p-5 space-y-4">
+      <input type="hidden" id="confirm-close-request-id" />
+      <input type="hidden" id="confirm-close-version" />
+
+      <div class="bg-emerald-50 border border-emerald-200 rounded p-3 text-xs text-emerald-900 space-y-1">
+        <span class="font-semibold block text-[11px] uppercase tracking-wider text-emerald-800">Field Resolution Notes:</span>
+        <p id="confirm-close-resolution-notes" class="italic font-medium"></p>
+      </div>
+
+      <p class="text-xs text-slate-600 leading-relaxed">
+        Please confirm that municipal work on the ground has been inspected and completed to your satisfaction. Once confirmed, this grievance will be marked <strong>CLOSED</strong>.
+      </p>
+
+      <div class="flex justify-end space-x-2 pt-2 border-t border-slate-100">
+        <button type="button" class="px-3 py-1.5 border border-slate-300 rounded text-xs font-medium text-slate-700 hover:bg-slate-50" onclick="GovFix.closeModal('confirm-close-modal')">
+          Cancel
+        </button>
+        <button type="button" onclick="CitizenPortal.executeConfirmClose()" class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-semibold shadow-sm transition">
+          Confirm &amp; Close Case
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- Modal: Dispute Resolution & Reopen (RESOLVED -> REOPENED)                 -->
+<!-- ========================================================================= -->
+<div id="dispute-reopen-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-backdrop">
+  <div class="bg-white rounded-xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden">
+    <div class="bg-rose-600 text-white px-5 py-4 flex items-center justify-between">
+      <h3 class="text-sm font-bold flex items-center space-x-1.5">
+        <span>🔄</span>
+        <span>Dispute Resolution &amp; Reopen Case</span>
+      </h3>
+      <button class="text-white hover:text-rose-100 font-bold" onclick="GovFix.closeModal('dispute-reopen-modal')">&times;</button>
+    </div>
+    <form id="dispute-form" class="p-5 space-y-4" onsubmit="CitizenPortal.executeDisputeReopen(event)">
+      <input type="hidden" id="dispute-request-id" />
+      <input type="hidden" id="dispute-version" />
+
+      <p class="text-xs text-slate-600 leading-relaxed">
+        If the issue was not actually fixed or was repaired improperly, provide specific details below. The grievance will be returned to the Supervisor queue for reassignment, and a fresh SLA cycle will be initialized.
+      </p>
+
+      <div>
+        <label for="dispute-reason-text" class="block text-xs font-semibold text-slate-700 mb-1">
+          Reason for Dispute <span class="text-red-500">*</span>
+        </label>
+        <textarea id="dispute-reason-text"
+                  rows="4"
+                  required
+                  minlength="5"
+                  placeholder="Explain why the resolution is incomplete (e.g. water pipeline still leaking, garbage bin missed)..."
+                  class="w-full text-xs rounded-lg border-slate-300 shadow-sm border p-2.5 focus:border-rose-500 focus:ring-rose-500"></textarea>
+      </div>
+
+      <div class="flex justify-end space-x-2 pt-2 border-t border-slate-100">
+        <button type="button" class="px-3 py-1.5 border border-slate-300 rounded text-xs font-medium text-slate-700 hover:bg-slate-50" onclick="GovFix.closeModal('dispute-reopen-modal')">
+          Cancel
+        </button>
+        <button type="submit" id="btn-submit-dispute" class="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-semibold shadow-sm transition">
+          Submit Dispute &amp; Reopen
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- Modal: Reopen Closed Complaint (CLOSED -> REOPENED, 7-Day Window)         -->
+<!-- ========================================================================= -->
+<div id="reopen-closed-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-backdrop">
+  <div class="bg-white rounded-xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden">
+    <div class="bg-slate-800 text-white px-5 py-4 flex items-center justify-between">
+      <h3 class="text-sm font-bold flex items-center space-x-1.5">
+        <span>🔄</span>
+        <span>Reopen Closed Complaint</span>
+      </h3>
+      <button class="text-white hover:text-slate-300 font-bold" onclick="GovFix.closeModal('reopen-closed-modal')">&times;</button>
+    </div>
+    <form id="reopen-closed-form" class="p-5 space-y-4" onsubmit="CitizenPortal.executeReopenClosed(event)">
+      <input type="hidden" id="reopen-closed-request-id" />
+      <input type="hidden" id="reopen-closed-version" />
+
+      <div class="bg-blue-50 border border-blue-200 rounded p-3 text-xs text-blue-900 space-y-1">
+        <div class="flex items-center space-x-1 font-semibold text-[11px] uppercase tracking-wider text-blue-800">
+          <span>7-Day Statutory Reopening Window</span>
+        </div>
+        <p id="reopen-closed-window-info" class="text-xs"></p>
+      </div>
+
+      <div>
+        <label for="reopen-closed-reason-text" class="block text-xs font-semibold text-slate-700 mb-1">
+          Mandatory Reason for Reopening <span class="text-red-500">*</span>
+        </label>
+        <textarea id="reopen-closed-reason-text"
+                  rows="4"
+                  required
+                  minlength="5"
+                  placeholder="State why this closed grievance needs to be reopened..."
+                  class="w-full text-xs rounded-lg border-slate-300 shadow-sm border p-2.5 focus:border-blue-500 focus:ring-blue-500"></textarea>
+      </div>
+
+      <div class="flex justify-end space-x-2 pt-2 border-t border-slate-100">
+        <button type="button" class="px-3 py-1.5 border border-slate-300 rounded text-xs font-medium text-slate-700 hover:bg-slate-50" onclick="GovFix.closeModal('reopen-closed-modal')">
+          Cancel
+        </button>
+        <button type="submit" id="btn-submit-reopen-closed" class="px-3.5 py-1.5 bg-blue-700 hover:bg-blue-800 text-white rounded text-xs font-semibold shadow-sm transition">
+          Reopen Complaint
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const CitizenPortal = {
+    allRequests: [],
+    currentFilter: "ALL",
+    searchQuery: "",
+    advisoryDebounceTimer: null,
+    currentAdvisory: null,
+
+    // Initial Load & Refresh
+    async loadRequests() {
+      const spinner = document.getElementById("loading-spinner");
+      const emptyState = document.getElementById("empty-state");
+      const noMatchState = document.getElementById("no-match-state");
+      const listEl = document.getElementById("requests-items");
+
+      if (spinner) spinner.classList.remove("hidden");
+      if (emptyState) emptyState.classList.add("hidden");
+      if (noMatchState) noMatchState.classList.add("hidden");
+      if (listEl) listEl.innerHTML = "";
+
+      try {
+        const response = await GovFix.listRequests();
+        const items = (response && response.data) ? response.data : ((response && response.items) ? response.items : []);
+        this.allRequests = Array.isArray(items) ? items : [];
+
+        this.updateStatsBar();
+        this.renderFilteredList();
+      } catch (err) {
+        if (spinner) spinner.classList.add("hidden");
+        GovFix.showErrorModal(err);
+      }
+    },
+
+    // Update Overview Stats
+    updateStatsBar() {
+      const total = this.allRequests.length;
+      const active = this.allRequests.filter(r => ["SUBMITTED", "ACKNOWLEDGED", "ASSIGNED", "IN_PROGRESS"].includes(r.state)).length;
+      const actionNeeded = this.allRequests.filter(r => ["NEEDS_INFO", "RESOLVED"].includes(r.state)).length;
+      const resolved = this.allRequests.filter(r => ["CLOSED", "RESOLVED"].includes(r.state)).length;
+
+      const statTotal = document.getElementById("stat-total");
+      const statActive = document.getElementById("stat-active");
+      const statAction = document.getElementById("stat-action-needed");
+      const statResolved = document.getElementById("stat-resolved");
+      const badge = document.getElementById("requests-count-badge");
+
+      if (statTotal) statTotal.textContent = total;
+      if (statActive) statActive.textContent = active;
+      if (statAction) statAction.textContent = actionNeeded;
+      if (statResolved) statResolved.textContent = resolved;
+      if (badge) badge.textContent = `${total} Complaints`;
+    },
+
+    // Search & Filter Handlers
+    handleSearch(val) {
+      this.searchQuery = (val || "").trim().toLowerCase();
+      this.renderFilteredList();
+    },
+
+    handleFilterChange(val) {
+      this.currentFilter = val;
+      this.renderFilteredList();
+    },
+
+    resetFilters() {
+      this.currentFilter = "ALL";
+      this.searchQuery = "";
+      const searchInput = document.getElementById("search-input");
+      const filterSelect = document.getElementById("status-filter-select");
+      if (searchInput) searchInput.value = "";
+      if (filterSelect) filterSelect.value = "ALL";
+      this.renderFilteredList();
+    },
+
+    // Render Complaint Cards
+    renderFilteredList() {
+      const spinner = document.getElementById("loading-spinner");
+      const emptyState = document.getElementById("empty-state");
+      const noMatchState = document.getElementById("no-match-state");
+      const listEl = document.getElementById("requests-items");
+
+      if (spinner) spinner.classList.add("hidden");
+      if (emptyState) emptyState.classList.add("hidden");
+      if (noMatchState) noMatchState.classList.add("hidden");
+
+      if (this.allRequests.length === 0) {
+        if (emptyState) emptyState.classList.remove("hidden");
+        return;
+      }
+
+      let filtered = this.allRequests.filter(req => {
+        // Status filter
+        if (this.currentFilter === "ACTIVE") {
+          if (!["SUBMITTED", "ACKNOWLEDGED", "ASSIGNED", "IN_PROGRESS"].includes(req.state)) return false;
+        } else if (this.currentFilter === "NEEDS_INFO") {
+          if (req.state !== "NEEDS_INFO") return false;
+        } else if (this.currentFilter === "RESOLVED") {
+          if (req.state !== "RESOLVED") return false;
+        } else if (this.currentFilter === "CLOSED") {
+          if (req.state !== "CLOSED") return false;
+        } else if (this.currentFilter === "REOPENED") {
+          if (req.state !== "REOPENED") return false;
+        } else if (this.currentFilter === "REJECTED") {
+          if (req.state !== "REJECTED") return false;
+        }
+
+        // Search text
+        if (this.searchQuery) {
+          const idMatch = req.id.toLowerCase().includes(this.searchQuery);
+          const titleMatch = (req.title || "").toLowerCase().includes(this.searchQuery);
+          const locMatch = (req.location || "").toLowerCase().includes(this.searchQuery);
+          const textMatch = (req.text || "").toLowerCase().includes(this.searchQuery);
+          if (!idMatch && !titleMatch && !locMatch && !textMatch) return false;
+        }
+
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        if (noMatchState) noMatchState.classList.remove("hidden");
+        return;
+      }
+
+      listEl.innerHTML = filtered.map(req => {
+        const sla = GovFix.formatSLARemaining(req.deadline, req.is_overdue, req.state);
+        const canProvideInfo = req.state === "NEEDS_INFO";
+        const canConfirmOrDispute = req.state === "RESOLVED";
+        const canReopenClosed = req.state === "CLOSED" && this.isWithinReopenWindow(req);
+
+        return `
+          <div class="p-4 rounded-xl border border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm transition space-y-3" id="card-${req.id}">
+            <div class="flex items-start justify-between gap-2">
+              <div class="space-y-1">
+                <div class="flex flex-wrap items-center gap-1.5">
+                  <button type="button" onclick="CitizenPortal.openDetailModal('${req.id}')" class="font-mono text-xs font-bold text-slate-900 hover:text-amber-600 transition underline underline-offset-2">
+                    ${req.id}
+                  </button>
+                  ${GovFix.statusBadge(req.state)}
+                  ${GovFix.categoryBadge(req.category || req.reported_category || "Uncategorised")}
+                  ${GovFix.escalationBadge(req.escalation_level)}
+                </div>
+                <h3 class="text-sm font-bold text-slate-800 leading-snug cursor-pointer" onclick="CitizenPortal.openDetailModal('${req.id}')">
+                  ${this.escapeHtml(req.title)}
+                </h3>
+              </div>
+              <div class="text-right flex-shrink-0">
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] border font-tabular ${sla.class}">
+                  ${sla.text}
+                </span>
+                <div class="text-[10px] text-slate-400 mt-1">${GovFix.formatTimeAgo(req.created_at)}</div>
+              </div>
+            </div>
+
+            <p class="text-xs text-slate-600 line-clamp-2 leading-relaxed">
+              ${this.escapeHtml(req.text || "No description provided.")}
+            </p>
+
+            <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 text-[11px] text-slate-500">
+              <div class="flex items-center space-x-3">
+                ${req.location ? `<span class="flex items-center space-x-1"><span>📍</span><span class="font-medium text-slate-700">${this.escapeHtml(req.location)}</span></span>` : ''}
+                ${req.assigned_to ? `<span class="font-mono text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">Assigned: ${req.assigned_to}</span>` : ''}
+              </div>
+
+              <!-- Quick Action Triggers -->
+              <div class="flex items-center space-x-2">
+                <button type="button" onclick="CitizenPortal.openDetailModal('${req.id}')" class="px-2.5 py-1 text-slate-700 bg-slate-100 hover:bg-slate-200 text-xs font-medium rounded transition">
+                  Details &amp; Timeline &rarr;
+                </button>
+
+                ${canProvideInfo ? `
+                  <button type="button" onclick="CitizenPortal.openInfoModal('${req.id}', ${req.version})" class="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded shadow-sm transition flex items-center space-x-1">
+                    <span>⚠️ Provide Info</span>
+                  </button>
+                ` : ''}
+
+                ${canConfirmOrDispute ? `
+                  <button type="button" onclick="CitizenPortal.openConfirmCloseModal('${req.id}', ${req.version})" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded shadow-sm transition">
+                    <span>✓ Confirm Close</span>
+                  </button>
+                  <button type="button" onclick="CitizenPortal.openDisputeReopenModal('${req.id}', ${req.version})" class="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded shadow-sm transition">
+                    <span>Dispute</span>
+                  </button>
+                ` : ''}
+
+                ${canReopenClosed ? `
+                  <button type="button" onclick="CitizenPortal.openReopenClosedModal('${req.id}', ${req.version})" class="px-2.5 py-1 bg-blue-700 hover:bg-blue-800 text-white text-xs font-semibold rounded shadow-sm transition">
+                    <span>Reopen Case</span>
+                  </button>
+                ` : ''}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+    },
+
+    // 7-Day Window check for CLOSED state
+    isWithinReopenWindow(req) {
+      if (req.state !== "CLOSED") return false;
+      const closedAt = new Date(req.updated_at);
+      const now = new Date();
+      const diffDays = (now - closedAt) / (1000 * 60 * 60 * 24);
+      return diffDays <= 7;
+    },
+
+    // Form Character Counters & Debounced AI Advisory
+    handleFormInput() {
+      const titleInput = document.getElementById("grievance-title");
+      const textInput = document.getElementById("grievance-text");
+      const titleCount = document.getElementById("title-char-count");
+      const textCount = document.getElementById("text-char-count");
+
+      if (titleInput && titleCount) {
+        titleCount.textContent = `${titleInput.value.length} / 120`;
+      }
+      if (textInput && textCount) {
+        textCount.textContent = `${textInput.value.length} / 2000`;
+      }
+
+      // Debounce advisory preview
+      clearTimeout(this.advisoryDebounceTimer);
+      this.advisoryDebounceTimer = setTimeout(() => {
+        this.fetchAdvisoryPreview();
+      }, 400);
+    },
+
+    async fetchAdvisoryPreview() {
+      const title = (document.getElementById("grievance-title")?.value || "").trim();
+      const text = (document.getElementById("grievance-text")?.value || "").trim();
+      const advisoryContainer = document.getElementById("ai-advisory-container");
+
+      if (text.length < 10) {
+        if (advisoryContainer) advisoryContainer.classList.add("hidden");
+        return;
+      }
+
+      try {
+        const res = await GovFix.getAdvisoryPreview(text, title);
+        if (res && res.data) {
+          this.currentAdvisory = res.data;
+          this.renderAdvisoryPreview(res.data);
+        }
+      } catch (err) {
+        // AI Advisory is strictly non-blocking; silent failure is intentional
+        if (advisoryContainer) advisoryContainer.classList.add("hidden");
+      }
+    },
+
+    renderAdvisoryPreview(data) {
+      const container = document.getElementById("ai-advisory-container");
+      const urgencyBadge = document.getElementById("advisory-urgency-badge");
+      const catRow = document.getElementById("advisory-cat-row");
+      const catText = document.getElementById("advisory-cat-text");
+      const locRow = document.getElementById("advisory-loc-row");
+      const locText = document.getElementById("advisory-loc-text");
+
+      if (!container) return;
+      container.classList.remove("hidden");
+
+      if (urgencyBadge) {
+        urgencyBadge.textContent = `${data.urgency || 'MEDIUM'} Urgency`;
+        urgencyBadge.className = data.urgency === 'HIGH' 
+          ? 'px-2 py-0.5 rounded text-[10px] font-bold font-mono uppercase bg-red-100 text-red-800'
+          : 'px-2 py-0.5 rounded text-[10px] font-bold font-mono uppercase bg-indigo-200 text-indigo-900';
+      }
+
+      if (data.category && data.category !== "Uncategorised") {
+        if (catRow) catRow.classList.remove("hidden");
+        if (catText) catText.textContent = `${data.category} (${Math.round((data.confidence || 0.8) * 100)}% match)`;
+      } else {
+        if (catRow) catRow.classList.add("hidden");
+      }
+
+      if (data.location) {
+        if (locRow) locRow.classList.remove("hidden");
+        if (locText) locText.textContent = data.location;
+      } else {
+        if (locRow) locRow.classList.add("hidden");
+      }
+    },
+
+    applySuggestedCategory() {
+      if (!this.currentAdvisory || !this.currentAdvisory.category) return;
+      const select = document.getElementById("grievance-category");
+      if (select) {
+        select.value = this.currentAdvisory.category;
+        GovFix.showToast(`Category set to ${this.currentAdvisory.category}`, "info");
+      }
+    },
+
+    applySuggestedLocation() {
+      if (!this.currentAdvisory || !this.currentAdvisory.location) return;
+      const input = document.getElementById("grievance-location");
+      if (input) {
+        input.value = this.currentAdvisory.location;
+        GovFix.showToast(`Location set to ${this.currentAdvisory.location}`, "info");
+      }
+    },
+
+    // Grievance Submission
+    async submitGrievance(e) {
+      e.preventDefault();
+      const form = e.target;
+      const title = form.title.value.trim();
+      const location = form.location.value.trim() || null;
+      const reported_category = form.reported_category.value || null;
+      const text = form.text.value.trim();
+
+      const titleError = document.getElementById("title-error");
+      const textError = document.getElementById("text-error");
+
+      let hasError = false;
+      if (title.length < 5) {
+        if (titleError) titleError.classList.remove("hidden");
+        hasError = true;
+      } else {
+        if (titleError) titleError.classList.add("hidden");
+      }
+
+      if (text.length < 10) {
+        if (textError) textError.classList.remove("hidden");
+        hasError = true;
+      } else {
+        if (textError) textError.classList.add("hidden");
+      }
+
+      if (hasError) return;
+
+      // Duplicate submission protection
+      const submitBtn = document.getElementById("btn-submit-grievance");
+      const spinner = document.getElementById("btn-submit-spinner");
+      const btnText = document.getElementById("btn-submit-text");
+
+      if (submitBtn) submitBtn.disabled = true;
+      if (spinner) spinner.classList.remove("hidden");
+      if (btnText) btnText.textContent = "Registering...";
+
+      try {
+        const payload = { title, location, text };
+        if (reported_category) {
+          payload.reported_category = reported_category;
+        }
+
+        const result = await GovFix.createRequest(payload);
+        const createdReq = result.data || result.item;
+
+        // Show prominent success feedback
+        const successBanner = document.getElementById("submission-success-banner");
+        const successId = document.getElementById("success-complaint-id");
+        if (successBanner && successId && createdReq) {
+          successId.textContent = createdReq.id;
+          successBanner.classList.remove("hidden");
+          setTimeout(() => successBanner.scrollIntoView({ behavior: 'smooth' }), 100);
+        }
+
+        GovFix.showToast(`Complaint ${createdReq ? createdReq.id : ''} created successfully!`, "success");
+        form.reset();
+        document.getElementById("ai-advisory-container")?.classList.add("hidden");
+        this.currentAdvisory = null;
+
+        await this.loadRequests();
+      } catch (err) {
+        GovFix.showErrorModal(err);
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
+        if (spinner) spinner.classList.add("hidden");
+        if (btnText) btnText.textContent = "Register Grievance";
+      }
+    },
+
+    // Detail Modal with Visual Stepper & Event History
+    async openDetailModal(requestId) {
+      try {
+        const res = await GovFix.getRequest(requestId);
+        const req = res.data;
+        if (!req) return;
+
+        // Header
+        document.getElementById("detail-modal-id").textContent = req.id;
+        document.getElementById("detail-modal-status-badge").innerHTML = GovFix.statusBadge(req.state);
+
+        // Core fields
+        document.getElementById("detail-modal-title").textContent = req.title;
+        document.getElementById("detail-modal-text").textContent = req.text;
+        document.getElementById("detail-modal-category").textContent = req.category || req.reported_category || "Uncategorised";
+        document.getElementById("detail-modal-location").textContent = req.location || "Not specified";
+        document.getElementById("detail-modal-deadline").textContent = GovFix.formatDate(req.deadline);
+        document.getElementById("detail-modal-created").textContent = GovFix.formatDate(req.created_at);
+        document.getElementById("detail-modal-assigned").textContent = req.assigned_to || "Unassigned (Triage)";
+        document.getElementById("detail-modal-version").textContent = `v${req.version}`;
+
+        // Stepper
+        this.renderVisualStepper(req);
+
+        // History
+        await this.loadRequestHistory(req.id);
+
+        // Action Buttons in Footer
+        this.renderDetailFooterActions(req);
+
+        GovFix.openModal("detail-modal");
+      } catch (err) {
+        GovFix.showErrorModal(err);
+      }
+    },
+
+    renderVisualStepper(req) {
+      const container = document.getElementById("detail-stepper-container");
+      const bannerContainer = document.getElementById("detail-exceptional-banner");
+      if (!container) return;
+
+      const steps = [
+        { state: "SUBMITTED", label: "Submitted" },
+        { state: "ACKNOWLEDGED", label: "Review" },
+        { state: "ASSIGNED", label: "Assigned" },
+        { state: "IN_PROGRESS", label: "In Action" },
+        { state: "RESOLVED", label: "Resolved" },
+        { state: "CLOSED", label: "Closed" },
+      ];
+
+      const stateHierarchy = {
+        SUBMITTED: 1,
+        ACKNOWLEDGED: 2,
+        ASSIGNED: 3,
+        IN_PROGRESS: 4,
+        RESOLVED: 5,
+        CLOSED: 6,
+      };
+
+      const currentRank = stateHierarchy[req.state] || 0;
+
+      container.innerHTML = steps.map((s, idx) => {
+        const stepRank = idx + 1;
+        let itemClass = "stepper-item";
+        let circleContent = stepRank;
+
+        if (currentRank > stepRank) {
+          itemClass += " completed";
+          circleContent = "✓";
+        } else if (currentRank === stepRank) {
+          itemClass += " active";
+        }
+
+        return `
+          <div class="${itemClass}">
+            <div class="stepper-circle">${circleContent}</div>
+            <span class="text-[10px] font-semibold text-slate-700 mt-1">${s.label}</span>
+          </div>
+        `;
+      }).join("");
+
+      // Exceptional banner logic
+      if (bannerContainer) {
+        bannerContainer.innerHTML = "";
+        if (req.state === "NEEDS_INFO") {
+          bannerContainer.innerHTML = `
+            <div class="p-3 rounded-lg bg-amber-50 border border-amber-300 text-amber-900 flex items-start justify-between">
+              <div>
+                <strong class="font-bold flex items-center space-x-1">
+                  <span>⚠️</span>
+                  <span>SLA Clock Paused: Municipal Officer Requested Information</span>
+                </strong>
+                <p class="mt-1 text-xs text-amber-800 italic">"${this.escapeHtml(req.info_request_note || 'Please provide additional details')}"</p>
+              </div>
+              <button onclick="CitizenPortal.openInfoModal('${req.id}', ${req.version})" class="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-semibold shadow-sm ml-3 flex-shrink-0">
+                Provide Information &rarr;
+              </button>
+            </div>
+          `;
+        } else if (req.state === "REOPENED") {
+          bannerContainer.innerHTML = `
+            <div class="p-3 rounded-lg bg-rose-50 border border-rose-300 text-rose-900">
+              <strong class="font-bold flex items-center space-x-1">
+                <span>🔄</span>
+                <span>Case Disputed &amp; Reopened (Cycle ${req.sla_cycle || 2})</span>
+              </strong>
+              <p class="mt-1 text-xs text-rose-800">
+                Reopen reason: <em>"${this.escapeHtml(req.rejection_reason || 'Resolution disputed by citizen')}"</em>.
+                Complaint has been reset to the Supervisor assignment queue with an updated SLA deadline.
+              </p>
+            </div>
+          `;
+        } else if (req.state === "REJECTED") {
+          bannerContainer.innerHTML = `
+            <div class="p-3 rounded-lg bg-red-50 border border-red-300 text-red-900">
+              <strong class="font-bold flex items-center space-x-1">
+                <span>❌</span>
+                <span>Grievance Rejected by Municipal Supervisor</span>
+              </strong>
+              <p class="mt-1 text-xs text-red-800">
+                Reason: <em>"${this.escapeHtml(req.rejection_reason || 'Grievance does not fall under municipal jurisdiction')}"</em>.
+              </p>
+            </div>
+          `;
+        }
+      }
+    },
+
+    async loadRequestHistory(requestId) {
+      const container = document.getElementById("detail-history-container");
+      if (!container) return;
+
+      container.innerHTML = `<div class="p-4 text-center text-slate-400 text-xs">Loading event audit log...</div>`;
+
+      try {
+        const res = await GovFix.getRequestHistory(requestId);
+        const events = res.data || [];
+
+        if (events.length === 0) {
+          container.innerHTML = `<div class="p-4 text-center text-slate-400 text-xs">No audit events recorded yet.</div>`;
+          return;
+        }
+
+        container.innerHTML = events.map(ev => {
+          let badgeText = ev.action;
+          if (ev.to_state) {
+            badgeText = `${ev.from_state || 'START'} &rarr; ${ev.to_state}`;
+          }
+
+          let noteText = ev.reason || "";
+          if (ev.details) {
+            if (ev.details.info_request_note) noteText = `Requested: "${ev.details.info_request_note}"`;
+            if (ev.details.additional_info) noteText = `Citizen provided: "${ev.details.additional_info}"`;
+            if (ev.details.resolution_notes) noteText = `Resolution: "${ev.details.resolution_notes}"`;
+            if (ev.details.reopen_reason) noteText = `Reopened: "${ev.details.reopen_reason}"`;
+          }
+
+          return `
+            <div class="p-3 flex items-start justify-between text-xs hover:bg-slate-50 transition">
+              <div class="space-y-1">
+                <div class="flex items-center space-x-2">
+                  <span class="font-bold text-slate-800">${ev.actor_role}</span>
+                  <span class="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">${badgeText}</span>
+                </div>
+                ${noteText ? `<p class="text-slate-600 text-[11px]">${this.escapeHtml(noteText)}</p>` : ''}
+              </div>
+              <div class="text-[10px] text-slate-400 font-tabular text-right">
+                ${GovFix.formatDate(ev.timestamp)}
+              </div>
+            </div>
+          `;
+        }).join("");
+      } catch (err) {
+        container.innerHTML = `<div class="p-3 text-red-500 text-xs">Unable to load history: ${err.message || 'Access denied'}</div>`;
+      }
+    },
+
+    renderDetailFooterActions(req) {
+      const container = document.getElementById("detail-modal-action-buttons");
+      if (!container) return;
+      container.innerHTML = "";
+
+      if (req.state === "NEEDS_INFO") {
+        container.innerHTML = `
+          <button onclick="GovFix.closeModal('detail-modal'); CitizenPortal.openInfoModal('${req.id}', ${req.version})" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-semibold shadow-sm transition">
+            ⚠️ Provide Information &rarr;
+          </button>
+        `;
+      } else if (req.state === "RESOLVED") {
+        container.innerHTML = `
+          <button onclick="GovFix.closeModal('detail-modal'); CitizenPortal.openConfirmCloseModal('${req.id}', ${req.version})" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-semibold shadow-sm transition">
+            ✓ Confirm Resolution &amp; Close
+          </button>
+          <button onclick="GovFix.closeModal('detail-modal'); CitizenPortal.openDisputeReopenModal('${req.id}', ${req.version})" class="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-semibold shadow-sm transition">
+            🔄 Dispute &amp; Reopen
+          </button>
+        `;
+      } else if (req.state === "CLOSED" && this.isWithinReopenWindow(req)) {
+        container.innerHTML = `
+          <button onclick="GovFix.closeModal('detail-modal'); CitizenPortal.openReopenClosedModal('${req.id}', ${req.version})" class="px-3 py-1.5 bg-blue-700 hover:bg-blue-800 text-white rounded text-xs font-semibold shadow-sm transition">
+            🔄 Reopen Closed Case (Within 7-Day Window)
+          </button>
+        `;
+      }
+    },
+
+    // Action A: Provide Missing Info
+    openInfoModal(reqId, version) {
+      const req = this.allRequests.find(r => r.id === reqId);
+      document.getElementById("info-request-id").value = reqId;
+      document.getElementById("info-version").value = version;
+      document.getElementById("info-officer-note").textContent = (req && req.info_request_note) 
+        ? req.info_request_note 
+        : "Additional details or landmarks required to locate the issue.";
+      document.getElementById("info-response-text").value = "";
+      GovFix.openModal("info-modal");
+    },
+
+    async submitAdditionalInfo(e) {
+      e.preventDefault();
+      const id = document.getElementById("info-request-id").value;
+      const version = parseInt(document.getElementById("info-version").value, 10);
+      const note = document.getElementById("info-response-text").value.trim();
+
+      if (!note) {
+        GovFix.showToast("Please provide the requested clarifying information.", "error");
+        return;
+      }
+
+      const submitBtn = document.getElementById("btn-submit-info");
+      if (submitBtn) submitBtn.disabled = true;
+
+      try {
+        await GovFix.transitionRequest(id, "ACKNOWLEDGED", {
+          expected_version: version,
+          additional_info: note
+        });
+        GovFix.closeModal("info-modal");
+        GovFix.showToast("Information submitted successfully; SLA clock resumed.", "success");
+        await this.loadRequests();
+      } catch (err) {
+        GovFix.showErrorModal(err);
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
+      }
+    },
+
+    // Action B: Confirm Resolution & Close
+    openConfirmCloseModal(reqId, version) {
+      const req = this.allRequests.find(r => r.id === reqId);
+      document.getElementById("confirm-close-request-id").value = reqId;
+      document.getElementById("confirm-close-version").value = version;
+      document.getElementById("confirm-close-resolution-notes").textContent = (req && req.resolution_notes)
+        ? req.resolution_notes
+        : "Field work reported completed by assigned officer.";
+      GovFix.openModal("confirm-close-modal");
+    },
+
+    async executeConfirmClose() {
+      const id = document.getElementById("confirm-close-request-id").value;
+      const version = parseInt(document.getElementById("confirm-close-version").value, 10);
+
+      try {
+        await GovFix.transitionRequest(id, "CLOSED", {
+          expected_version: version,
+        });
+        GovFix.closeModal("confirm-close-modal");
+        GovFix.showToast("Complaint confirmed and permanently closed.", "success");
+        await this.loadRequests();
+      } catch (err) {
+        GovFix.showErrorModal(err);
+      }
+    },
+
+    // Action C: Dispute Resolution & Reopen
+    openDisputeReopenModal(reqId, version) {
+      document.getElementById("dispute-request-id").value = reqId;
+      document.getElementById("dispute-version").value = version;
+      document.getElementById("dispute-reason-text").value = "";
+      GovFix.openModal("dispute-reopen-modal");
+    },
+
+    async executeDisputeReopen(e) {
+      e.preventDefault();
+      const id = document.getElementById("dispute-request-id").value;
+      const version = parseInt(document.getElementById("dispute-version").value, 10);
+      const reason = document.getElementById("dispute-reason-text").value.trim();
+
+      if (!reason) {
+        GovFix.showToast("A dispute reason is required.", "error");
+        return;
+      }
+
+      const submitBtn = document.getElementById("btn-submit-dispute");
+      if (submitBtn) submitBtn.disabled = true;
+
+      try {
+        await GovFix.transitionRequest(id, "REOPENED", {
+          expected_version: version,
+          reopen_reason: reason
+        });
+        GovFix.closeModal("dispute-reopen-modal");
+        GovFix.showToast("Resolution contested. Complaint reopened for supervisor review.", "warning");
+        await this.loadRequests();
+      } catch (err) {
+        GovFix.showErrorModal(err);
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
+      }
+    },
+
+    // Action D: Reopen Closed Complaint (7-Day Window)
+    openReopenClosedModal(reqId, version) {
+      const req = this.allRequests.find(r => r.id === reqId);
+      document.getElementById("reopen-closed-request-id").value = reqId;
+      document.getElementById("reopen-closed-version").value = version;
+      document.getElementById("reopen-closed-reason-text").value = "";
+
+      const closedAt = new Date(req.updated_at);
+      const now = new Date();
+      const daysPassed = (now - closedAt) / (1000 * 60 * 60 * 24);
+      const daysLeft = Math.max(0, 7 - daysPassed).toFixed(1);
+
+      document.getElementById("reopen-closed-window-info").textContent = 
+        `Closed on ${GovFix.formatDate(req.updated_at)}. You have ${daysLeft} days remaining to reopen this grievance.`;
+
+      GovFix.openModal("reopen-closed-modal");
+    },
+
+    async executeReopenClosed(e) {
+      e.preventDefault();
+      const id = document.getElementById("reopen-closed-request-id").value;
+      const version = parseInt(document.getElementById("reopen-closed-version").value, 10);
+      const reason = document.getElementById("reopen-closed-reason-text").value.trim();
+
+      if (!reason) {
+        GovFix.showToast("A reason for reopening is required.", "error");
+        return;
+      }
+
+      const submitBtn = document.getElementById("btn-submit-reopen-closed");
+      if (submitBtn) submitBtn.disabled = true;
+
+      try {
+        await GovFix.transitionRequest(id, "REOPENED", {
+          expected_version: version,
+          reopen_reason: reason
+        });
+        GovFix.closeModal("reopen-closed-modal");
+        GovFix.showToast("Closed complaint reopened successfully within permitted window.", "warning");
+        await this.loadRequests();
+      } catch (err) {
+        GovFix.showErrorModal(err);
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
+      }
+    },
+
+    escapeHtml(str) {
+      if (!str) return "";
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+  };
+
+  document.addEventListener("DOMContentLoaded", () => {
+    CitizenPortal.loadRequests();
+    window.addEventListener("govfix:persona-changed", () => CitizenPortal.loadRequests());
+  });
+</script>
+{% endblock %}

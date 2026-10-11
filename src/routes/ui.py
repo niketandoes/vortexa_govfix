@@ -9,7 +9,12 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
+FRONTEND_TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "frontend" / "templates"
+TEMPLATES_DIR = (
+    FRONTEND_TEMPLATES_DIR
+    if FRONTEND_TEMPLATES_DIR.exists()
+    else Path(__file__).resolve().parent.parent / "templates"
+)
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 router = APIRouter(tags=["UI"])
@@ -104,10 +109,10 @@ def officer_workspace(request: Request) -> HTMLResponse:
         context={
             "request": request,
             "active_page": "officer",
-            "page_title": "Officer Triage Workspace",
+            "page_title": "Municipal Grievance Triage",
             "page_subtitle": "Review intake complaints, verify SLA timelines, request citizen info, and assign field officers.",
             "default_actor_id": "USR-OFF-01",
-            "default_persona_role": "Triage Officer",
+            "default_persona_role": "Officer",
             "personas": SEEDED_PERSONAS,
         },
     )
