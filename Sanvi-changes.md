@@ -129,3 +129,16 @@ This file tracks all actions, file modifications, and commands executed during o
 
 ---
 
+### Entry #9
+**Timestamp:** 2026-10-11 16:02:15
+
+**What was done:** Resolved git merge conflict resulting from `git pull origin main`:
+1. Resolved conflicted files: `src/routes/requests.py` and `src/workflow.py`.
+2. Preserved all Phase 2 features (Advisory Preview, owner-scoped History endpoint, 7-day post-closure window) alongside Niketan's incoming changes (Appeal commands, Field Officer progress updates, triage deadlines, resolution evidence validation).
+3. Re-seeded on-disk SQLite database (`data/govfix.db`) with updated schema.
+4. Updated `tests/test_citizen_portal.py` to supply required `resolution_evidence_json` during `RESOLVED` transitions and include Supervisor assignment step during reopened dispute cycle.
+5. Successfully concluded merge commit (`9eb567c`). All 90 automated tests across all suites passing.
+
+**Why it was done:** Integrated remote updates from `origin/main` without losing any Phase 2 Citizen Portal functionality, keeping the workspace synchronized, conflict-free, and 100% test-verified.
+
+---
