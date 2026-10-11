@@ -14,10 +14,16 @@ def client():
         yield test_client
 
 
-def test_index_redirects_to_citizen(client: TestClient) -> None:
-    response = client.get("/", follow_redirects=False)
-    assert response.status_code == 307
-    assert response.headers["location"] == "/citizen"
+def test_index_renders_landing_page(client: TestClient) -> None:
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "GovFix" in response.text
+    assert "Every civic complaint deserves action." in response.text
+    assert "Citizen Login" in response.text
+    assert "Staff Login" in response.text
+    assert "Report a Grievance" in response.text
+    assert "Transparent Complaint Tracking" in response.text
 
 
 def test_citizen_portal_renders(client: TestClient) -> None:

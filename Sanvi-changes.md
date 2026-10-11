@@ -142,3 +142,38 @@ This file tracks all actions, file modifications, and commands executed during o
 **Why it was done:** Integrated remote updates from `origin/main` without losing any Phase 2 Citizen Portal functionality, keeping the workspace synchronized, conflict-free, and 100% test-verified.
 
 ---
+
+### Entry #10
+**Timestamp:** 2026-10-11 16:56:45
+
+**What was done:** Completed Phase 3: Complete Officer Workspace (Triage & Assignment) at `/officer`:
+1. `src/templates/officer.html`: Implemented two-panel operational layout, summary metrics, statutory 2-hour triage SLA badge, searchable & filterable intake queue, complaint inspector, action modals (Acknowledge, Assign Field Officer, Request Missing Info, Reject Invalid Complaint, Reclassify Category), and non-blocking AI advisory sidebar.
+2. `src/static/app.js`: Added `getRequestSuggestions` and `formatTriageRemaining` timing helpers.
+3. `src/routes/ui.py`: Updated officer workspace metadata to "Municipal Grievance Triage" with Officer role.
+4. `src/routes/requests.py`: Added `GET /api/v1/requests/{request_id}/suggestions` connecting stored suggestions and offline ML local classifier.
+5. `tests/test_officer_workspace.py`: Added 14 targeted tests verifying seeded identity, intake queue, acknowledgement transition, unassigned queue, Field Officer assignment, access isolation, missing info note validation, rejection reason requirement, category reclassification, refusal auditing, version conflict handling, API error contract, resolution prevention, and advisory non-mutation. (All 104 tests passing).
+
+**Why it was done:** Fulfills all requirements of Phase 3: Complete Officer Workspace, delivering an operational triage and assignment workspace integrated with the backend workflow and audit trail.
+
+---
+
+### Entry #11
+**Timestamp:** 2026-10-11 17:15:30
+
+**What was done:** Implemented Premium Landing Page with Citizen Login and Staff Login at root route (`/`):
+1. `src/templates/home.html` & `frontend/templates/home.html`: Created dedicated, cinematic landing page:
+   - Full-screen high-resolution municipal avenue hero background (`/static/hero-bg.jpg`) with dark navy (`#081B2A`) translucent gradient overlay.
+   - Floating white navigation bar with GovFix logo, outlined green Citizen Login button, and solid green Staff Login button.
+   - Interactive Staff Login dropdown menu anchored to Staff button providing direct entry to all 4 authorized staff workspaces (`/officer`, `/field-officer`, `/supervisor`, `/audit`) with keyboard and outside-click dismissal.
+   - Mobile responsive navigation drawer.
+   - Centered hero section featuring public service announcement badge, bold responsive headline (`Every civic complaint deserves action.`), supporting paragraph, primary green `Report a Grievance` CTA, and `Track your complaint` secondary link.
+   - Bottom trust & capability strip highlighting Transparent Complaint Tracking, SLA Deadline Monitoring, Accountable Officer Actions, and Verifiable Audit History.
+2. `src/routes/ui.py`: Updated `GET /` to render `home.html` instead of redirecting to `/citizen`.
+3. `src/static/hero-bg.jpg` & `frontend/static/hero-bg.jpg`: Added high-resolution twilight civic municipal avenue background asset.
+4. `tests/test_ui.py`: Updated root route assertion to verify landing page rendering.
+5. `tests/test_landing_page.py`: Added 7 comprehensive test cases verifying 200 OK rendering, navigation links, Citizen & Staff login buttons, all 4 staff dropdown workspaces, hero CTA & tracking links, bottom capability strip, background image asset delivery, and continued availability of all 5 persona workspaces. (All 111 tests passing).
+
+**Why it was done:** Enhances GovFix with a modern, high-end civic landing page inspired by the Adyen reference composition, providing clear public entry points for citizens and municipal staff while preserving all existing backend workflows and persona routes.
+
+---
+

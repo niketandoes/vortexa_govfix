@@ -32,7 +32,7 @@ def connect(database_path: str | Path | None = None) -> sqlite3.Connection:
     else:
         target = ":memory:"
 
-    connection = sqlite3.connect(target, timeout=5.0)
+    connection = sqlite3.connect(target, timeout=5.0, check_same_thread=False)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
     connection.execute("PRAGMA busy_timeout = 5000")

@@ -79,9 +79,18 @@ SEEDED_PERSONAS = [
 ]
 
 
-@router.get("/", response_class=RedirectResponse, include_in_schema=False)
-def index() -> RedirectResponse:
-    return RedirectResponse(url="/citizen", status_code=307)
+@router.get("/", response_class=HTMLResponse)
+def index(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request=request,
+        name="home.html",
+        context={
+            "request": request,
+            "active_page": "home",
+            "page_title": "Municipal Grievance Platform",
+            "personas": SEEDED_PERSONAS,
+        },
+    )
 
 
 @router.get("/citizen", response_class=HTMLResponse)
