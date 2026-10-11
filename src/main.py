@@ -14,6 +14,9 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from src.database import connect, initialize_database
 from src.routes.requests import router as requests_router
 from src.routes.clock import router as clock_router

@@ -167,7 +167,10 @@ cd vortexa_govfix
 python -m venv .venv
 .venv\Scripts\Activate.ps1   # On Linux/macOS: source .venv/bin/activate
 
-# Install dependencies in editable mode
+# Install dependencies via requirements.txt:
+python -m pip install -r requirements.txt
+
+# Or install package in editable mode:
 python -m pip install -e ".[dev]"
 ```
 
@@ -224,19 +227,36 @@ python scripts/seed_firestore.py
 
 ---
 
-## 6. Running the Application
+## 6. Running and Accessing the Application
 
 Start the FastAPI application with Uvicorn:
 ```powershell
 python -m uvicorn src.main:app --reload --port 8000
 ```
 
-Open your browser and navigate to:
-- **Public Entry & Sign-In:** [http://127.0.0.1:8000/login](http://127.0.0.1:8000/login)
-- **Citizen Registration:** [http://127.0.0.1:8000/signup](http://127.0.0.1:8000/signup)
-- **API Documentation (Swagger):** [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
-- **Developer Email Outbox:** [http://127.0.0.1:8000/dev/outbox](http://127.0.0.1:8000/dev/outbox)
-- **System Health Check:** [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health)
+Once running, access the application via your browser at **`http://127.0.0.1:8000`**:
+
+### 🌐 Entry Points & Public Pages
+| Page | URL | Description |
+| :--- | :--- | :--- |
+| **Landing & Login** | [`http://127.0.0.1:8000/login`](http://127.0.0.1:8000/login) | Main entry with Google Sign-In & Email/Password login |
+| **Citizen Registration** | [`http://127.0.0.1:8000/signup`](http://127.0.0.1:8000/signup) | Citizen account creation & Google one-click onboarding |
+| **Interactive API Docs** | [`http://127.0.0.1:8000/docs`](http://127.0.0.1:8000/docs) | Complete Swagger UI for exploring and testing API endpoints |
+| **Developer Email Outbox** | [`http://127.0.0.1:8000/dev/outbox`](http://127.0.0.1:8000/dev/outbox) | Live dev inbox for viewing outgoing notification emails |
+| **System Health Check** | [`http://127.0.0.1:8000/health`](http://127.0.0.1:8000/health) | Uptime status monitor |
+
+### 🏢 Direct Role-Based Workspace Portals
+Upon signing in, users are automatically routed to their authoritative portal based on their database role:
+| Workspace | URL | Permitted Role & Purpose |
+| :--- | :--- | :--- |
+| **Citizen Portal** | [`http://127.0.0.1:8000/citizen`](http://127.0.0.1:8000/citizen) | Lodge complaints, track timelines, submit missing info, confirm resolution |
+| **Triage Console** | [`http://127.0.0.1:8000/staff/triage`](http://127.0.0.1:8000/staff/triage) | Triage incoming queue, review AI suggestions, dispatch to field officers |
+| **Field Execution** | [`http://127.0.0.1:8000/staff/field`](http://127.0.0.1:8000/staff/field) | View assigned work orders, update progress, submit resolution evidence |
+| **Supervisor Command** | [`http://127.0.0.1:8000/staff/supervisor`](http://127.0.0.1:8000/staff/supervisor) | Monitor escalation levels, reassign cases, adjudicate appeals, control clock |
+| **Audit Inspector** | [`http://127.0.0.1:8000/staff/audit`](http://127.0.0.1:8000/staff/audit) | Read-only inspection of hash-chained audit logs & cryptographic verification |
+| **Admin Console** | [`http://127.0.0.1:8000/admin`](http://127.0.0.1:8000/admin) | Provision staff accounts, configure SLA policies, control simulated clock |
+
+*(Legacy shortcuts `/officer`, `/field-officer`, `/supervisor`, and `/audit` are also supported with automated role redirection).*
 
 ---
 
