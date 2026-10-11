@@ -329,3 +329,18 @@ What was done:
      - Full test suite expanded to **140 automated tests passing (100% pass rate in 25.67s)**.
 
 Why it was done: To execute migration to MongoDB Atlas with the provided credentials (`niketoke101_db_user`), purge old data, and enable cloud MongoDB persistence across all entities while maintaining full test coverage.
+
+Timestamp: 2026-10-11 19:22:00
+
+What was done: 
+- Executed live MongoDB Atlas migration to cluster `gov-fix.ywnq7y7.mongodb.net`:
+  1. Connected to Atlas using provided URI and credentials.
+  2. Fixed sparse index handling for `dedupe_key` and `firebase_uid` so null values are omitted during collection index creation.
+  3. Purged all stale documents and dropped previous collections in MongoDB `gov-fix`.
+  4. Seeded clean canonical records: 8 users, 6 requests, 6 SHA-256 hash-chained audit events, and clock state.
+  5. Purged old local SQLite database file `data/govfix.db`.
+  6. Updated `.env` with live MongoDB URI, `DATABASE_BACKEND=mongodb`, and Firebase service account path.
+  7. Added Firebase service account JSON pattern to `.gitignore` to prevent secret commits.
+  8. Verified full test suite: 140/140 tests pass with 100% pass rate.
+
+Why it was done: To complete the requested live migration to MongoDB Atlas, purge old data, and verify full end-to-end functionality.

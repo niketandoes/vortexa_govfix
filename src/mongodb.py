@@ -177,8 +177,9 @@ def purge_mongodb_data(db: Database | None = None) -> dict[str, int]:
     ]
     for coll_name in collections:
         try:
-            res = db[coll_name].delete_many({})
-            counts[coll_name] = res.deleted_count
+            cnt = db[coll_name].count_documents({})
+            db[coll_name].drop()
+            counts[coll_name] = cnt
         except Exception as exc:
             logger.warning("Error purging collection %s: %s", coll_name, exc)
             counts[coll_name] = 0
@@ -200,6 +201,8 @@ def save_user_to_mongodb(user_data: dict[str, Any], db: Database | None = None) 
 
     doc = dict(user_data)
     doc["_id"] = doc["id"]
+    if doc.get("firebase_uid") is None:
+        doc.pop("firebase_uid", None)
     try:
         db[COLLECTION_USERS].replace_one({"_id": doc["_id"]}, doc, upsert=True)
         return True
@@ -270,11 +273,36 @@ def save_audit_event_to_mongodb(audit_data: dict[str, Any], db: Database | None 
     doc = dict(audit_data)
     if "id" in doc and doc["id"] is not None:
         doc["_id"] = doc["id"]
+    if doc.get("dedupe_key") is None:
+        doc.pop("dedupe_key", None)
+
     try:
         db[COLLECTION_AUDIT].insert_one(doc)
         return True
     except Exception as exc:
         logger.error("Error writing audit entry to MongoDB: %s", exc)
+        return False
+
+
+def save_ai_suggestion_to_mongodb(suggestion_data: dict[str, Any], db: Database | None = None) -> bool:
+    """Save AI advisory suggestion to MongoDB."""
+    if db is None:
+        db = get_mongodb_database()
+    if db is None:
+        return False
+
+    doc = dict(suggestion_data)
+    sug_id = doc.get("id")
+    if sug_id:
+        doc["_id"] = sug_id
+    try:
+        if sug_id:
+            db[COLLECTION_AI_SUGGESTIONS].replace_one({"_id": sug_id}, doc, upsert=True)
+        else:
+            db[COLLECTION_AI_SUGGESTIONS].insert_one(doc)
+        return True
+    except Exception as exc:
+        logger.error("Error saving AI suggestion to MongoDB: %s", exc)
         return False
 
 

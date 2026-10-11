@@ -9,3 +9,5 @@ data/*.db-wal
 .outbox/
 secrets/
 *service-account*.json
+*firebase-adminsdk*.json
+gov-fix-*.json
