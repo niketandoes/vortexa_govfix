@@ -7,21 +7,26 @@ Plan 02 implements the deterministic workflow engine for GovFix. The engine enfo
 
 ## 2. Transition Rules Matrix & Invariants
 
-The transition table is defined as immutable code configuration. Any state change outside this table is categorically refused.
+The transition table is defined as immutable code configuration across the 9 canonical states (`SUBMITTED`, `ACKNOWLEDGED`, `NEEDS_INFO`, `ASSIGNED`, `IN_PROGRESS`, `RESOLVED`, `CLOSED`, `REOPENED`, `REJECTED`). Any state change outside this table is categorically refused.
 
 | # | From State | To State | Permitted Roles | Invariants & Extra Conditions |
 | :- | :--- | :--- | :--- | :--- |
 | 1 | `(new)` | `SUBMITTED` | `Citizen` | Title and complaint text must not be empty. |
-| 2 | `SUBMITTED` | `ACKNOWLEDGED` | `Officer`, `Supervisor` | None. Indicates formal receipt by the municipal office. |
-| 3 | `ACKNOWLEDGED` | `ASSIGNED` | `Supervisor` | Must supply `assigned_to` officer ID; assignee role must be `Officer`. |
-| 4 | `ACKNOWLEDGED` | `REJECTED` | `Supervisor` | Must supply non-empty `rejection_reason`. |
-| 5 | `ASSIGNED` | `IN_PROGRESS` | `Officer` | Actor must strictly match `assigned_to`. |
-| 6 | `IN_PROGRESS` | `RESOLVED` | `Officer` | Actor must match `assigned_to` and supply non-empty `resolution_notes`. |
-| 7 | `RESOLVED` | `CLOSED` | `Citizen`, `Supervisor` | If actor is Citizen, must be the request owner (`citizen_id == actor.id`). |
-| 8 | `RESOLVED` | `REOPENED` | `Citizen` | Must be the request owner and supply a non-empty `reopen_reason`; starts a new SLA cycle. |
-| 9 | `REOPENED` | `IN_PROGRESS` | `Officer` | Actor must strictly match `assigned_to`. |
+| 2 | `SUBMITTED` | `ACKNOWLEDGED` | `Officer`, `Supervisor` | Formal triage acknowledgement by municipal office. |
+| 3 | `ACKNOWLEDGED` | `NEEDS_INFO` | `Officer`, `Supervisor` | Requires `info_request_note`; pauses SLA clock (`paused_at = now()`). |
+| 4 | `NEEDS_INFO` | `ACKNOWLEDGED` | `Citizen` | Actor must be request owner (`citizen_id == actor.id`); requires `additional_info`; resumes clock, extends deadline by paused duration. |
+| 5 | `ACKNOWLEDGED` | `ASSIGNED` | `Officer`, `Supervisor` | Must supply `assigned_to`; assignee role must be `Field Officer`. |
+| 6 | `ACKNOWLEDGED` | `REJECTED` | `Officer`, `Supervisor` | Requires non-empty `rejection_reason`. Citizen may appeal. |
+| 7 | `REJECTED` | `ACKNOWLEDGED` | `Supervisor` | Supervisor approves citizen appeal; requires `appeal_approval_note`. |
+| 8 | `ASSIGNED` | `IN_PROGRESS` | `Field Officer` | Actor must strictly match `assigned_to`. Starts field execution. |
+| 9 | `IN_PROGRESS` | `RESOLVED` | `Field Officer` | Actor must match `assigned_to`; requires non-empty `resolution_notes` and completion evidence. |
+| 10 | `RESOLVED` | `CLOSED` | `Citizen` | Actor must be request owner (`citizen_id == actor.id`) confirming completion. |
+| 11 | `RESOLVED` | `REOPENED` | `Citizen` | Actor must be request owner disputing resolution; requires non-empty `reopen_reason`; starts new SLA cycle. |
+| 12 | `CLOSED` | `REOPENED` | `Citizen` | Request owner within 7-day post-closure window; requires non-empty `reopen_reason`; starts new SLA cycle. |
+| 13 | `REOPENED` | `ASSIGNED` | `Supervisor` | Supervisor reassigns case to a Field Officer; requires `assigned_to` (`Field Officer`). |
 
-> **Crucial Rule:** Escalation is **not** a state. It is a level attribute (`escalation_level = 0, 1, 2`) with audit events, keeping the state machine minimal and unambiguous.
+> **Critical Invariant:** Direct `REOPENED → IN_PROGRESS` is strictly prohibited. Direct `SUBMITTED → ASSIGNED`, `IN_PROGRESS → CLOSED`, or any other skipped transitions are categorically blocked and logged as refused attempts in the audit trail.
+> **Escalation Invariant:** Escalation is **not** a workflow state. It is an independent attribute (`escalation_level = 0, 1, 2`) with audit events, preserving the state machine.
 
 Assignment, reassignment, and category confirmation are audited commands, not artificial state transitions. Reassignment preserves `ASSIGNED` or `IN_PROGRESS`; category confirmation preserves state and deterministically recalculates the current SLA deadline.
 
@@ -51,7 +56,7 @@ Incoming Transition Request
           │ (Passes)
           ▼
 ┌───────────────────────────────┐
-│ 4. Ownership & Assignment     │──(Fails)──► Log Refusal: "Actor is not assigned officer/owner" ──► Return 403
+│ 4. Ownership & Assignment     │──(Fails)──► Log Refusal: "Actor is not assigned field officer/owner" ──► Return 403
 └───────────────────────────────┘
           │ (Passes)
           ▼
@@ -61,8 +66,8 @@ Incoming Transition Request
           │ (Passes)
           ▼
   Atomic DB Transaction:
-  1. Compare `expected_version` with the stored request version
-  2. Update `requests` state & attributes and increment `version`
+  1. Compare `expected_version` with stored request version (409 on mismatch)
+  2. Update `requests` state & attributes (and unpause clock if leaving NEEDS_INFO) and increment `version`
   3. Insert `audit` entry (outcome='ACCEPTED')
 ```
 
@@ -86,11 +91,11 @@ When a transition fails, an entry is immediately committed to the `audit` table 
   "success": false,
   "error": {
     "code": "INVALID_TRANSITION_OR_PERMISSION",
-    "message": "Cannot transition from ASSIGNED to RESOLVED. Permitted next state is IN_PROGRESS.",
+    "message": "Only the assigned field officer can move this complaint to In Progress.",
     "current_state": "ASSIGNED",
-    "requested_state": "RESOLVED",
+    "requested_state": "IN_PROGRESS",
     "permitted_next_states": ["IN_PROGRESS"],
-    "actor_role": "Officer",
+    "actor_role": "Citizen",
     "audit_logged": true
   }
 }
@@ -102,76 +107,79 @@ When a transition fails, an entry is immediately committed to the `audit` table 
 
 ### 5.1 `POST /api/v1/requests`
 - **Role:** Citizen
-- **Payload:** `{"title": "...", "text": "...", "reported_category": "Water Leak" (optional)}`
-- **Action:** Validates citizen identity, stores the optional value only as a citizen-reported hint, uses `Uncategorised` for the confirmed category and initial 72-hour SLA, inserts the request in `SUBMITTED`, and writes `SUBMIT_COMPLAINT`.
+- **Payload:** `{"title": "...", "text": "...", "reported_category": "Water Leak" (optional), "location": "..."}`
+- **Action:** Validates citizen identity, stores optional hint, uses `Uncategorised` for confirmed category and initial 72-hour SLA, inserts request in `SUBMITTED`, and writes `SUBMIT_COMPLAINT`.
 
 ### 5.2 `POST /api/v1/requests/{id}/transition`
-- **Role:** Citizen, Officer, or Supervisor (resolved from DB via actor identity)
+- **Role:** Resolved from DB via verified actor identity (`Citizen`, `Officer`, `Field Officer`, `Supervisor`)
 - **Payload:**
   ```json
   {
     "to_state": "IN_PROGRESS",
     "expected_version": 3,
-    "assigned_to": "USR-OFF-01",      // required for ASSIGNED
+    "assigned_to": "USR-FLD-01",      // required for ASSIGNED
+    "info_request_note": "...",       // required for NEEDS_INFO
+    "additional_info": "...",         // required for NEEDS_INFO -> ACKNOWLEDGED
     "rejection_reason": "...",        // required for REJECTED
+    "appeal_approval_note": "...",    // required for REJECTED -> ACKNOWLEDGED
     "resolution_notes": "...",        // required for RESOLVED
     "reopen_reason": "..."            // required for REOPENED
   }
   ```
 - **Action:** Runs 5-step validation, updates request state atomically with audit entry.
-
-On `RESOLVED -> REOPENED`, the same transaction increments `reopen_count` and `sla_cycle`, sets `sla_started_at` to simulated now, recalculates `deadline`, resets `escalation_level` to 0, and records these values in audit details. The MVP permits repeated reopening; a policy limit can be added later without changing the state model.
+  - On `ACKNOWLEDGED -> NEEDS_INFO`: Sets `paused_at = now()`.
+  - On `NEEDS_INFO -> ACKNOWLEDGED`: Computes `paused_seconds = now() - paused_at`, adds to `total_paused_seconds`, extends `deadline`, and clears `paused_at`.
+  - On `RESOLVED -> REOPENED`: Increments `reopen_count` and `sla_cycle`, resets `sla_started_at` to now, recalculates `deadline`, and resets `escalation_level = 0`.
 
 ### 5.3 `POST /api/v1/requests/{id}/category`
-
 - **Roles:** Officer or Supervisor.
 - **Payload:** `{"category": "Water Leak", "expected_version": 3}`.
-- **Allowed states:** Any active state.
-- **Action:** Validates the configured category, preserves state, recomputes `deadline` from `sla_started_at`, increments `version`, and writes one `CONFIRM_CATEGORY` audit record containing old/new category and deadline values.
+- **Action:** Validates configured category, preserves state, recomputes `deadline`, increments `version`, and writes `CONFIRM_CATEGORY` audit record.
 
 ### 5.4 `POST /api/v1/requests/{id}/reassign`
-
 - **Role:** Supervisor.
-- **Payload:** `{"assigned_to": "USR-OFF-02", "reason": "...", "expected_version": 4}`.
+- **Payload:** `{"assigned_to": "USR-FLD-02", "reason": "...", "expected_version": 4}`.
 - **Allowed states:** `ASSIGNED` or `IN_PROGRESS`.
-- **Action:** Validates the new assignee is an Officer, requires a non-empty reason, preserves state, increments `version`, and writes one `REASSIGN_REQUEST` audit record containing old/new assignee IDs.
+- **Action:** Validates new assignee is a `Field Officer`, requires non-empty reason, preserves current state (`ASSIGNED` or `IN_PROGRESS`), increments `version`, and writes `REASSIGN_REQUEST` audit record.
 
 ### 5.5 `GET /api/v1/requests/{id}`
-- Returns request details, current SLA deadline, overdue status, escalation level, and an array of `permitted_actions` calculated dynamically based on caller role.
+- Returns request details, SLA countdown, paused status, overdue status, escalation level, and dynamic `permitted_actions`.
 
 ### 5.6 `GET /api/v1/requests`
 - Filterable query parameters: `state`, `assigned_to`, `citizen_id`, `category`, `is_overdue`.
-- **Read scopes:** Citizens can read only their requests; Officers can read the `SUBMITTED` intake queue and their assigned requests; Supervisors can read all requests. Client filters may narrow, but never expand, the server-enforced scope.
+- **Server-Enforced Read Scopes:**
+  - **Citizen:** Can read ONLY requests where `citizen_id == actor.id`.
+  - **Officer (Triage):** Can read `SUBMITTED`, `ACKNOWLEDGED`, `NEEDS_INFO`, and unassigned requests across the municipality.
+  - **Field Officer:** Can read ONLY requests where `assigned_to == actor.id`.
+  - **Supervisor:** Can read all municipal requests.
+  Client-supplied query filters can narrow but never expand server-enforced scopes.
 
 ### 5.7 `GET /api/v1/audit`
-
-- **Role:** Supervisor in the seeded demo identity model.
-- Returns audit records and verification status; it never exposes a mutation or trigger-bypass operation.
+- **Role:** Supervisor and Audit Inspector.
+- Returns append-only audit records and cryptographic verification status; strictly read-only.
 
 ---
 
 ## 6. Implementation Deliverables
-1. `src/workflow.py`: Deterministic state machine, transition table, and 5-step validator.
-2. `src/routes/requests.py`: FastAPI route handlers for creating requests and executing transitions.
-3. `src/services/audit_service.py`: Helper to record accepted and refused transitions.
-4. `tests/test_workflow.py`: Exhaustive pytest test suite testing:
-   - Happy path: `SUBMITTED` -> `ACKNOWLEDGED` -> `ASSIGNED` -> `IN_PROGRESS` -> `RESOLVED` -> `CLOSED`.
-   - Reopen path: `RESOLVED` -> `REOPENED` -> `IN_PROGRESS` -> `RESOLVED`.
-   - Skipped state refusal: `ASSIGNED` directly to `RESOLVED` (fails step 2).
-   - Role violation refusal: Citizen attempting the valid `IN_PROGRESS` -> `RESOLVED` edge (fails step 3 with HTTP 403).
-   - Non-assigned officer refusal: Officer B trying to start Officer A's ticket (fails step 4).
-   - Missing fields refusal: Rejecting without a reason (fails step 5).
-   - Category confirmation and reassignment command contracts.
-   - Reopen SLA-cycle reset and audit details.
-   - Stale `expected_version` conflict handling and concurrent writer behavior.
-   - Read-scope enforcement and verification that all refusals are stored in `audit`.
+1. `src/workflow.py`: Deterministic state machine, 9-state transition table, and 5-step validator.
+2. `src/routes/requests.py`: FastAPI route handlers for request creation, transitions, reassignment, and category confirmation.
+3. `src/services/audit_service.py`: Cryptographic hash-chained audit logging service.
+4. `tests/test_workflow.py`: Exhaustive pytest suite testing:
+   - Complete lifecycle: `SUBMITTED` -> `ACKNOWLEDGED` -> `ASSIGNED` -> `IN_PROGRESS` -> `RESOLVED` -> `CLOSED`.
+   - `NEEDS_INFO` path: `ACKNOWLEDGED` -> `NEEDS_INFO` -> `ACKNOWLEDGED` with clock pause/resume.
+   - Field Officer assignment: Only `Field Officer` can receive assignment and transition to `IN_PROGRESS`.
+   - Reopen path: `RESOLVED` -> `REOPENED` -> `ASSIGNED` -> `IN_PROGRESS`.
+   - Rejection and Citizen Appeal: `ACKNOWLEDGED` -> `REJECTED` -> `ACKNOWLEDGED` approved by Supervisor.
+   - Unauthorized attempts: Blocked with HTTP 403, ticket unchanged, refusal logged.
+   - Skipped transitions (`SUBMITTED -> ASSIGNED`, `REOPENED -> IN_PROGRESS`): Blocked with HTTP 422.
+   - Concurrency conflicts: HTTP 409 on version mismatch.
+   - Strict read-scope enforcement across Citizen, Officer, Field Officer, and Supervisor.
 
 ---
 
 ## 7. Confirmed Design Decisions
-
-1. **Category Confirmation:** Officers and Supervisors may confirm or change a category through the dedicated command.
-2. **Reopening:** The MVP permits repeated reopening, requires a reason, and starts a new SLA/escalation cycle each time.
-3. **Reassignment:** Supervisors may reassign `ASSIGNED` or `IN_PROGRESS` work; state is preserved and a reason is mandatory.
-4. **Optimistic Concurrency:** Every mutation requires `expected_version`; stale requests return HTTP 409.
-5. **Demo Identity:** `X-Actor-ID` identifies a seeded user and the server resolves its stored role. This is a demonstration mechanism, not authentication.
+1. **5 Personas & Scoped Access:** Explicit segregation between Triage Officer (`/officer`) and Field Officer (`/field-officer`).
+2. **Deterministic State Machine:** 9 canonical states with strict server-side validation.
+3. **Clock Pausing on NEEDS_INFO:** SLA clock is paused while awaiting citizen input and resumed upon submission.
+4. **Optimistic Concurrency:** Every write requires `expected_version` to prevent race conditions.
+5. **No Force Closure:** Ticket closure remains citizen-confirmed; supervisors can reassign and approve appeals.

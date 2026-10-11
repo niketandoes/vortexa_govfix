@@ -81,13 +81,14 @@ For live judging, `scripts/tamper_demo.py` first copies the seeded database to a
 
 ## 4. Adversarial Test Suite
 
-The test suite formally validates all 7 core invariants under adversarial conditions:
+The test suite formally validates all 8 core invariants under adversarial conditions:
 
 | Invariant | Test Method | Expected Outcome |
 | :--- | :--- | :--- |
 | **State Skipping** | Attempt transition `ASSIGNED` ➔ `RESOLVED` directly | Refused with HTTP 422, `from_state` and allowed states in error, logged to audit. |
 | **Unauthorized Role** | From `IN_PROGRESS`, Citizen attempts the otherwise valid transition to `RESOLVED` | Refused with HTTP 403, logged as role violation in audit. |
-| **Tamper Resistance** | Update a row directly in SQLite | Trigger aborts update; if forced, verification fails and identifies row. |
+| **Field Officer Isolation** | Field Officer B attempts to start work or resolve Field Officer A's ticket | Refused with HTTP 403, logged as unauthorized assignment attempt. |
+| **Tamper Resistance** | Update a row directly in SQLite | Trigger aborts update; if forced on demo copy, verification fails and identifies row. |
 | **AI Boundary Isolation** | AST checks plus runtime capability tests | Fails if AI imports workflow/request repositories or can mutate `requests`/`audit`. |
 | **Offline Resilience** | Disconnect external internet / remove API key | System switches cleanly to local TF-IDF fallback with zero errors. |
 | **Idempotent Escalation** | Run concurrent evaluation at the same clock time | Exactly one escalation audit entry per request, level, and SLA cycle. |
@@ -95,17 +96,18 @@ The test suite formally validates all 7 core invariants under adversarial condit
 
 ---
 
-## 5. Live Demo Script (Step-by-Step for Judges)
+## 5. Live Demo Script (Step-by-Step for Judges across 5 Personas)
 
-The walkthrough uses two named records so the happy path and escalation proof do not invalidate one another.
+The walkthrough uses named records so the happy path, dispute, and escalation proofs do not invalidate one another:
 
-1. **Step 1 — Complaint A and AI Advisory:** Submit Complaint A as Ramesh. Show the `Water Leak` suggestion and extracted location while the confirmed category remains `Uncategorised` and state remains `SUBMITTED`.
-2. **Step 2 — Acknowledge and Assign:** Officer Kumar acknowledges Complaint A from the intake queue. Supervisor Gupta assigns it to Kumar. Confirm that the state is now `ASSIGNED`.
-3. **Step 3 — Invalid Move Refusal:** As Officer Kumar, request `ASSIGNED -> RESOLVED`. Show HTTP 422 and the refusal naming `IN_PROGRESS` as the valid next state.
-4. **Step 4 — Role Refusal and Happy Path:** Kumar starts work so Complaint A becomes `IN_PROGRESS`. Switch to Ramesh and request the otherwise valid `IN_PROGRESS -> RESOLVED` edge; show HTTP 403 and the logged role refusal. Switch back to Kumar, resolve with non-empty notes, then let Ramesh close it.
-5. **Step 5 — Complaint B Escalation:** Select the separately seeded active 24-hour Water Leak complaint. Advance to 25 elapsed hours for Amber Level 1, then advance 11 additional hours to 36 total for Red Level 2. Complaint A remains closed and is never used for this step.
-6. **Step 6 — Audit Verification and Tamper Catch:** Verify the normal chain successfully. Run `scripts/tamper_demo.py` to create and alter a disposable database copy, point verification at that copy, and show the first compromised row. The normal database is untouched.
-7. **Step 7 — Offline Fallback:** Unset the Gemini API key and submit a new complaint. Show that the bundled scikit-learn classifier produces a `local_fallback` suggestion without affecting workflow behavior.
+1. **Step 1 — Citizen Submission & AI Advisory:** Submit Pothole Complaint A as Ramesh Patel (`USR-CIT-01`) on `/citizen`. Receive unique tracking token `REQ-2026-0001`. Show the AI suggestion for category and location preview while state remains `SUBMITTED`.
+2. **Step 2 — Triage Officer Review & Assignment:** Log in as Triage Officer Anil Kumar (`USR-OFF-01`) on `/officer`. Acknowledge complaint (`SUBMITTED → ACKNOWLEDGED`). Assign it to Field Officer Vikram Singh (`USR-FLD-01`). Confirm the ticket moves to `ASSIGNED` and leaves the triage intake queue.
+3. **Step 3 — Field Officer Queue & Invalid Transition Blocked:** Switch to `/field-officer` as Vikram Singh (`USR-FLD-01`). Observe that Sunita Rao (`USR-FLD-02`) cannot see Vikram's case. Attempt `ASSIGNED → RESOLVED` directly; verify HTTP 422 refusal, ticket unchanged, and refusal logged to audit.
+4. **Step 4 — Field Execution & Citizen Closure:** Vikram Singh moves `ASSIGNED → IN_PROGRESS`. Switch to Ramesh Patel and attempt `IN_PROGRESS → RESOLVED`; verify HTTP 403 role violation. Vikram Singh submits resolution notes and photos (`IN_PROGRESS → RESOLVED`). Switch to Ramesh Patel on `/citizen` and confirm resolution (`RESOLVED → CLOSED`).
+5. **Step 5 — Resolution Dispute & Supervisor Reassignment:** On another resolved ticket, citizen disputes resolution (`RESOLVED → REOPENED` with reason). Supervisor Rajesh Gupta on `/supervisor` inspects the case and reassigns it to Field Officer Sunita Rao (`REOPENED → ASSIGNED`). Sunita Rao accepts and executes work.
+6. **Step 6 — SLA Escalation Demo:** Inspect seeded overdue Complaint B (`REQ-2026-0006`). Advance simulated clock by 25 hours on `/supervisor` widget. Verify Amber `Level 1` escalation to Supervisor. Advance by 11 additional hours (36h total, 1.5x) to verify Red `Level 2` escalation to Municipal Head. Confirm zero duplicate audit events.
+7. **Step 7 — Read-Only Audit Chain & Tamper Detection:** Open `/audit` console. Verify all accepted and refused events are logged with SHA-256 hashes. Click "Verify Audit Chain" to show green chain verification. Run `python scripts/tamper_demo.py` against disposable database copy and show immediate red alert identifying the exact tampered row ID.
+8. **Step 8 — Offline AI Fallback:** Unset Gemini API key; submit new complaint. Bundled scikit-learn TF-IDF classifier produces `local_fallback` suggestion without interruption.
 
 ---
 
@@ -113,7 +115,7 @@ The walkthrough uses two named records so the happy path and escalation proof do
 1. `src/services/verification_service.py`: Cryptographic chain validator and canonical hash calculation.
 2. `scripts/tamper_demo.py`: Script for judging demonstrations.
 3. `tests/test_adversarial.py`: Full adversarial test suite.
-4. `scripts/demo_walkthrough.py`: Automated CLI runner demonstrating all 7 steps.
+4. `scripts/demo_walkthrough.py`: Automated CLI runner demonstrating all 8 steps.
 
 ---
 

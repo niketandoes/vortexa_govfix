@@ -56,31 +56,49 @@ The singleton `clock_state` row persists offset/freeze state. Advance is relativ
 The dedicated category command is available to Officers and Supervisors in active states and stores old/new category and deadline values in `details_json`.
 
 ### 3.3 Reopen SLA Cycle
+On `RESOLVED -> REOPENED`, the workflow transaction sets `sla_started_at` to simulated now, increments `sla_cycle` and `reopen_count`, resets `escalation_level` to 0, resets `total_paused_seconds = 0`, and calculates a fresh deadline from the confirmed category. The required reopen reason and all reset values are stored in the transition audit details.
 
-On `RESOLVED -> REOPENED`, the workflow transaction sets `sla_started_at` to simulated now, increments `sla_cycle` and `reopen_count`, resets `escalation_level` to 0, and calculates a fresh deadline from the confirmed category. The required reopen reason and all reset values are stored in the transition audit details.
+### 3.4 Clock Pausing During `NEEDS_INFO`
+When an officer requests additional information from a citizen (`ACKNOWLEDGED → NEEDS_INFO`):
+1. **Pause Action:** The engine sets `paused_at = current_simulated_time`.
+2. **Clock Halting:** While `paused_at IS NOT NULL`, the effective elapsed resolution time is frozen. The ticket cannot breach SLA or advance escalation levels while waiting for citizen information.
+3. **Resume Action:** When the citizen submits the requested details (`NEEDS_INFO → ACKNOWLEDGED`):
+   $$\text{paused\_delta} = \text{current\_simulated\_time} - \text{paused\_at}$$
+   $$\text{total\_paused\_seconds} = \text{total\_paused\_seconds} + \text{paused\_delta}$$
+   $$\text{new\_deadline} = \text{deadline} + \text{paused\_delta}$$
+   $$\text{paused\_at} = \text{NULL}$$
+4. An audit record is created capturing `CLOCK_RESUMED` with the extended deadline in `details_json`.
 
 ---
 
 ## 4. Overdue Detection & Escalation Ladder
 
-### 4.1 Overdue Condition
-A grievance is marked `is_overdue = true` if and only if:
-1. $\text{current\_simulated\_time} > \text{deadline}$
-2. State is active: $\text{state} \in \{\text{SUBMITTED}, \text{ACKNOWLEDGED}, \text{ASSIGNED}, \text{IN\_PROGRESS}, \text{REOPENED}\}$.
-3. Grievances in terminal states (`RESOLVED`, `CLOSED`, `REJECTED`) are **never** overdue.
+### 4.1 Overdue & At-Risk Conditions
+A grievance is evaluated based on its active elapsed time (accounting for `total_paused_seconds`):
+$$\text{effective\_elapsed} = (\text{current\_simulated\_time} - \text{sla\_started\_at}) - \text{total\_paused\_seconds}$$
+$$\text{elapsed\_ratio} = \frac{\text{effective\_elapsed}}{\text{SLA\_duration}}$$
+
+1. **At-Risk Warning ($\ge 0.75\times$ elapsed):**
+   - When elapsed time reaches 75% of allotted SLA, the grievance is flagged as `At Risk`.
+   - Displays an Amber warning indicator in Officer and Supervisor dashboards.
+2. **Overdue Condition ($\ge 1.0\times$ elapsed):**
+   - Marked `is_overdue = true` when $\text{current\_simulated\_time} > \text{deadline}$ and `paused_at IS NULL`.
+   - State must be active: $\text{state} \in \{\text{SUBMITTED}, \text{ACKNOWLEDGED}, \text{ASSIGNED}, \text{IN\_PROGRESS}, \text{REOPENED}\}$.
+   - Grievances in terminal states (`RESOLVED`, `CLOSED`, `REJECTED`) or waiting in `NEEDS_INFO` are **never** overdue.
 
 ### 4.2 Multi-Level Escalation Ladder
-Escalation is calculated based on the ratio of elapsed time against the category's SLA:
-$$\text{elapsed\_ratio} = \frac{\text{current\_simulated\_time} - \text{sla\_started\_at}}{\text{SLA\_duration}}$$
 
-| Elapsed Ratio | Target Escalation Level | Responsible Recipient | Display Badge |
+| Elapsed Ratio | Escalation Level | Responsible Recipient | Display Badge & Action |
 | :--- | :--- | :--- | :--- |
-| $< 1.0\times$ | `Level 0` | Assigned Officer | Normal (Green) |
-| $\ge 1.0\times$ | `Level 1` | Supervisor | Overdue (Amber Warning) |
-| $\ge 1.5\times$ | `Level 2` | Seeded Municipal Head (`USR-SUP-01`, role `Supervisor`) | Critical (Red Alert) |
+| $< 0.75\times$ | `Level 0` | Assigned Field Officer | Normal (Green) |
+| $\ge 0.75\times$ | `Level 0` (At Risk) | Assigned Field Officer | At Risk (Amber Warning Badge) |
+| $\ge 1.0\times$ | `Level 1` | Supervisor (`USR-SUP-01`) | Overdue (Supervisor Escalation Alert) |
+| $\ge 1.5\times$ | `Level 2` | Municipal / Dept Head (`USR-SUP-01`) | Critical (Department Head Alert) |
+
+> **Crucial Rule:** Escalation is an independent attribute (`escalation_level = 0, 1, 2`) and audit event, **never** an arbitrary status transition. An overdue complaint remains `IN_PROGRESS` while its escalation level increases.
 
 ### 4.3 Idempotency Invariant
-- The escalation job can run repeatedly without duplicating audit logs or corrupting state:
+- The escalation evaluation job is idempotent. It can run repeatedly without duplicating audit logs or corrupting state:
   $$\text{If } \text{target\_level} > \text{request.escalation\_level} \implies \text{Update Level and Log Escalation}$$
   $$\text{If } \text{target\_level} \le \text{request.escalation\_level} \implies \text{No-op}$$
 - Each escalation writes an entry to `audit`:
@@ -88,33 +106,31 @@ $$\text{elapsed\_ratio} = \frac{\text{current\_simulated\_time} - \text{sla\_sta
   - `actor_role = 'System'`
   - `action = 'ESCALATE_REQUEST'`
   - `reason = 'SLA elapsed ratio reached 1.0x (Level 1 escalation to Supervisor)'`
-
-The implementation uses a conditional request update inside `BEGIN IMMEDIATE` and inserts the audit entry only when exactly one row advances. The audit `dedupe_key` value `escalation:{request_id}:{sla_cycle}:{target_level}` uniquely prevents duplicate escalation events for the same cycle under concurrent queue reads.
+- Deduplication key `escalation:{request_id}:{sla_cycle}:{target_level}` prevents race-condition duplicates.
 
 ---
 
 ## 5. Implementation Deliverables
-1. `src/services/clock_service.py`: Thread-safe clock provider with advance/reset capabilities and persistence in SQLite.
-2. `src/services/escalation_service.py`: Idempotent evaluation engine scanning active tickets and applying escalation thresholds.
-3. `src/routes/clock.py`: API routes for clock inspection and fast-forwarding.
+1. `src/services/clock_service.py`: Thread-safe clock provider with advance/reset capabilities and SQLite persistence.
+2. `src/services/escalation_service.py`: Idempotent evaluation engine scanning active tickets, handling clock pauses, and applying escalation thresholds.
+3. `src/routes/clock.py`: API routes for clock inspection and fast-forwarding (`+1h`, `+12h`, `+24h`, `+72h`, `reset`).
 4. `tests/test_escalation.py`:
    - Unit test creating a ticket with 24h SLA.
-   - Advancing clock by 25h -> asserts `is_overdue == True` and `escalation_level == 1`.
-   - Running escalation job again -> asserts no duplicate audit entries (idempotency).
-   - Advancing by 11 additional hours (36h total, 1.5x) -> asserts `escalation_level == 2`.
-   - Marking ticket `RESOLVED` -> asserts ticket is no longer considered overdue.
-   - Reopening it -> asserts a new SLA cycle, fresh deadline, and escalation level 0.
-   - Concurrent evaluation -> asserts one escalation event per level and SLA cycle.
-   - Resetting the clock -> asserts audit ID order remains authoritative even if simulated time moves backward.
+   - Advancing clock to 18h (0.75x) -> asserts `is_at_risk == True`.
+   - Advancing clock to 25h (1.04x) -> asserts `is_overdue == True` and `escalation_level == 1`.
+   - Pausing clock via `NEEDS_INFO` -> asserts time advancement does not increase elapsed time.
+   - Resuming clock via `ACKNOWLEDGED` -> asserts deadline extended by paused duration.
+   - Advancing to 36h total (1.5x) -> asserts `escalation_level == 2`.
+   - Marking ticket `RESOLVED` -> asserts ticket is no longer overdue.
+   - Reopening ticket -> asserts new SLA cycle, fresh deadline, and escalation level 0.
+   - Verifies duplicate escalation events are prevented.
 
 ---
 
 ## 6. Confirmed Decisions & Implementation Notes
 1. **Escalation Execution:** Confirmed **Event-driven & On-demand**. Escalation checks execute immediately whenever the simulated clock is advanced (`/api/v1/clock/advance`) or when grievance queues are queried, eliminating unnecessary background polling threads while ensuring instant state accuracy.
-2. **Clock UI Controls:** Predefined one-click fast-forward buttons (`+1h`, `+12h`, `+24h`, `+72h`, `+7d`) plus a `Reset Clock` button on the Supervisor and Administrative headers.
-3. **Calendar Time SLA:** SLA calculations use continuous calendar hours from the current `sla_started_at`; the first cycle starts at `created_at`.
-4. **Escalation Lifecycle:** Levels remain elevated during an active SLA cycle until resolution. Reopening creates a new cycle and resets the level to 0 in the same transaction.
-5. **Idempotent Audit Log:** Conditional updates, serialized writes, and the escalation `dedupe_key` uniqueness guard prevent duplicates.
-6. **Level 2 Recipient:** The MVP uses `USR-SUP-01`, the seeded Municipal Head with authorization role `Supervisor`; a separate notification-recipient model may be added later.
-
+2. **Calendar Time SLA:** SLA calculations use continuous calendar hours from the current `sla_started_at`; the first cycle starts at `created_at`.
+3. **Escalation Lifecycle:** Levels remain elevated during an active SLA cycle until resolution. Reopening creates a new cycle and resets the level to 0 in the same transaction.
+4. **Idempotent Audit Log:** Conditional updates, serialized writes, and the escalation `dedupe_key` uniqueness guard prevent duplicates.
+5. **Level 2 Recipient:** The MVP uses `USR-SUP-01`, the seeded Municipal Head with authorization role `Supervisor`; a separate notification-recipient model may be added later.
 

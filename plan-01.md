@@ -19,9 +19,9 @@ Plan 01 lays the bedrock for **GovFix (Municipal Grievance Workflow Engine)**. I
 Represents verified municipal identities. Serves as the single server-side source of truth for role authorization.
 ```sql
 CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,               -- e.g. 'USR-CIT-01', 'USR-OFF-01', 'USR-SUP-01'
+    id TEXT PRIMARY KEY,               -- e.g. 'USR-CIT-01', 'USR-OFF-01', 'USR-FLD-01', 'USR-SUP-01'
     name TEXT NOT NULL,
-    role TEXT NOT NULL CHECK(role IN ('Citizen', 'Officer', 'Supervisor')),
+    role TEXT NOT NULL CHECK(role IN ('Citizen', 'Officer', 'Field Officer', 'Supervisor')),
     email TEXT UNIQUE NOT NULL,
     department TEXT,
     created_at TEXT NOT NULL             -- canonical UTC ISO-8601
@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS users (
 ```
 
 ### 3.2 Table: `requests`
-Represents the municipal complaint throughout its lifecycle.
+Represents the municipal complaint throughout its lifecycle across the 9 canonical states.
 ```sql
 CREATE TABLE IF NOT EXISTS requests (
     id TEXT PRIMARY KEY,               -- e.g. 'REQ-2026-0001'
@@ -43,21 +43,26 @@ CREATE TABLE IF NOT EXISTS requests (
         'Water Leak', 'Garbage Collection', 'Streetlight', 'Pothole', 'Uncategorised'
     )),                                  -- authorized confirmed category
     state TEXT NOT NULL CHECK(state IN (
-        'SUBMITTED', 'ACKNOWLEDGED', 'ASSIGNED', 
+        'SUBMITTED', 'ACKNOWLEDGED', 'NEEDS_INFO', 'ASSIGNED', 
         'IN_PROGRESS', 'RESOLVED', 'CLOSED', 
         'REJECTED', 'REOPENED'
     )),
-    assigned_to TEXT,                  -- foreign key to users(id) when role = 'Officer'
+    assigned_to TEXT,                  -- foreign key to users(id) when role = 'Field Officer'
     rejection_reason TEXT,
     resolution_notes TEXT,
+    reopen_reason TEXT,
+    info_request_note TEXT,            -- note from officer requesting missing info
+    additional_info TEXT,              -- citizen-supplied additional info
     escalation_level INTEGER NOT NULL DEFAULT 0 CHECK(escalation_level IN (0, 1, 2)),
     sla_started_at TEXT NOT NULL,        -- start of current SLA cycle
     sla_cycle INTEGER NOT NULL DEFAULT 1 CHECK(sla_cycle >= 1),
     reopen_count INTEGER NOT NULL DEFAULT 0 CHECK(reopen_count >= 0),
+    paused_at TEXT,                    -- UTC timestamp when SLA clock was paused (NEEDS_INFO)
+    total_paused_seconds INTEGER NOT NULL DEFAULT 0 CHECK(total_paused_seconds >= 0),
     version INTEGER NOT NULL DEFAULT 1 CHECK(version >= 1),
     created_at TEXT NOT NULL,            -- simulated UTC ISO-8601 timestamp
     updated_at TEXT NOT NULL,
-    deadline TEXT NOT NULL,              -- sla_started_at + SLA(category)
+    deadline TEXT NOT NULL,              -- sla_started_at + SLA(category) + total_paused_seconds
     FOREIGN KEY(citizen_id) REFERENCES users(id),
     FOREIGN KEY(assigned_to) REFERENCES users(id)
 );
@@ -79,15 +84,15 @@ CREATE TABLE IF NOT EXISTS ai_suggestions (
 ```
 
 ### 3.4 Table: `audit`
-Tamper-evident, hash-chained audit trail recording every state transition attempt (both accepted and refused), assignments, category confirmations, and system escalations.
+Tamper-evident, hash-chained audit trail recording every state transition attempt (both accepted and refused), assignments, category confirmations, and system escalations across all 5 personas.
 ```sql
 CREATE TABLE IF NOT EXISTS audit (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp TEXT NOT NULL,             -- recorded wall-clock UTC time
     simulated_at TEXT,                   -- business time when relevant
     actor TEXT NOT NULL,               -- user ID or 'SYSTEM'
-    actor_role TEXT NOT NULL,          -- 'Citizen', 'Officer', 'Supervisor', 'System'
-    action TEXT NOT NULL,              -- e.g. 'SUBMIT_COMPLAINT', 'TRANSITION', 'CONFIRM_CATEGORY', 'ESCALATE'
+    actor_role TEXT NOT NULL CHECK(actor_role IN ('Citizen', 'Officer', 'Field Officer', 'Supervisor', 'System')),
+    action TEXT NOT NULL,              -- e.g. 'SUBMIT_COMPLAINT', 'TRANSITION', 'CONFIRM_CATEGORY', 'REASSIGN_REQUEST', 'ESCALATE'
     request_id TEXT NOT NULL,
     from_state TEXT,
     to_state TEXT,
@@ -138,31 +143,41 @@ END;
 ## 4. SLA & Transition Configuration Data
 
 ### 4.1 Category SLA Mapping
+Aligned with the municipal service guidelines:
 | Category | SLA Duration (Hours) | Description |
 | :--- | :--- | :--- |
-| `Water Leak` | 24 | Critical municipal utility leak |
-| `Garbage Collection` | 48 | Sanitation / missed pickup |
-| `Streetlight` | 72 | Electrical / streetlight maintenance |
-| `Pothole` | 168 (7 Days) | Road repairs & asphalt maintenance |
-| `Uncategorised` | 72 | Default SLA before category is confirmed |
+| `Water Leak` | 24 | Leaking public pipelines and water wastage |
+| `Garbage Collection` | 24 | Overflowing bins, missed collection, waste accumulation |
+| `Streetlight` | 48 | Non-functional public streetlights |
+| `Pothole` | 72 | Damaged road surfaces requiring municipal repair |
+| `Uncategorised` | 72 | Default SLA before category is confirmed by officer |
+
+Additionally, an initial **2-hour triage & assignment target** applies to all newly submitted complaints.
 
 ---
 
 ## 5. Seed Data Specification
-To allow instant local demonstration without manual user onboarding:
-- **Citizens:**
+Pre-seeded identities to test all **five distinct personas** immediately without manual registration:
+- **Persona 1 — Citizens:**
   - `USR-CIT-01`: "Ramesh Patel" (`ramesh@citizen.local`)
   - `USR-CIT-02`: "Priya Sharma" (`priya@citizen.local`)
-- **Officers:**
-  - `USR-OFF-01`: "Officer Anil Kumar" (`anil.kumar@municipality.gov`) - Public Works
-  - `USR-OFF-02`: "Officer Sunita Verma" (`sunita.verma@municipality.gov`) - Sanitation
-- **Supervisor:**
-  - `USR-SUP-01`: "Supervisor Rajesh Gupta" (`rajesh.gupta@municipality.gov`) - Municipal Head
-- **Pre-seeded Complaints:**
-  - 1 New complaint in `SUBMITTED` state.
-  - 1 Complaint in `ASSIGNED` state assigned to `USR-OFF-01`.
-  - 1 Active `Water Leak` complaint close to its escalation deadline, reserved for the clock demo.
-- **Clock:** One `clock_state` row with zero offset and `is_frozen = 0`.
+- **Persona 2 — Officer (Triage & Assignment):**
+  - `USR-OFF-01`: "Officer Anil Kumar" (`anil.kumar@municipality.gov`) — Triage Desk / Public Works
+- **Persona 3 — Field Officers (On-Ground Execution):**
+  - `USR-FLD-01`: "Field Officer Vikram Singh" (`vikram.singh@municipality.gov`) — Roads & Public Works
+  - `USR-FLD-02`: "Field Officer Sunita Rao" (`sunita.rao@municipality.gov`) — Sanitation & Streetlights
+- **Persona 4 — Supervisor (Command Center):**
+  - `USR-SUP-01`: "Supervisor Rajesh Gupta" (`rajesh.gupta@municipality.gov`) — Municipal Head
+- **Persona 5 — Audit Inspector Console (`/audit`):**
+  - Read-only audit verification surface accessible for inspection and live demo review.
+
+### Pre-seeded Complaints:
+1. `REQ-2026-0001` (`SUBMITTED`): New pothole complaint awaiting Triage Officer review in `/officer` intake queue.
+2. `REQ-2026-0002` (`NEEDS_INFO`): Water leak complaint where officer requested landmark details; clock paused.
+3. `REQ-2026-0003` (`ASSIGNED`): Garbage overflow assigned to `USR-FLD-01`, ready for `ASSIGNED → IN_PROGRESS`.
+4. `REQ-2026-0004` (`IN_PROGRESS`): Streetlight failure assigned to `USR-FLD-01`, ready for resolution notes.
+5. `REQ-2026-0005` (`RESOLVED`): Pothole repair completed, awaiting citizen confirmation in `/citizen`.
+6. `REQ-2026-0006` (`IN_PROGRESS`, Overdue Demo): 24-hour Water Leak seeded at 25h elapsed, triggering Level 1 Supervisor escalation for live judging.
 
 ---
 
@@ -170,7 +185,7 @@ To allow instant local demonstration without manual user onboarding:
 1. `src/database.py`: SQLite connection factory with WAL mode and foreign key enforcement.
 2. `src/models.py`: Pydantic schemas for data validation, optimistic versions, and API input/output.
 3. `src/schema.sql`: Complete DDL schema including tables, indexes, and triggers.
-4. `src/seed.py`: Deterministic seed script resetting and populating initial data.
+4. `src/seed.py`: Deterministic seed script resetting and populating initial data for all 5 personas.
 5. `tests/test_foundation.py`: Automated tests verifying triggers, constraints, clock state, canonical timestamps, and seed data.
 6. Repository bootstrap: `src/main.py`, `pyproject.toml` (or pinned requirements), `.env.example`, and README setup/start/test commands.
 
@@ -178,10 +193,11 @@ To allow instant local demonstration without manual user onboarding:
 
 ## 7. Confirmed Decisions & Implementation Notes
 1. **Data Access Layer:** Confirmed **Raw SQLite** via Python `sqlite3`/`aiosqlite` for direct, transparent control over triggers, transactions, and WAL mode without ORM overhead.
-2. **Identity Model:** The demo UI sends `X-Actor-ID`; the server resolves the role from `users` and never accepts a client-supplied role. This seeded identity selector is explicitly not production authentication.
-3. **Database Security:** Enforced by SQLite `BEFORE UPDATE` and `BEFORE DELETE` triggers aborting any mutation on `audit`.
-4. **Categories:** 4 core municipal categories (`Water Leak`, `Garbage Collection`, `Streetlight`, `Pothole`) + `Uncategorised`.
-5. **Department Head Recipient:** `USR-SUP-01` is the MVP Level 2 recipient while retaining the `Supervisor` authorization role.
-6. **Concurrency:** Every request mutation supplies `expected_version` and increments `version` in the same transaction as its audit entry.
-7. **Audit Details:** Action-specific values are stored as canonical JSON and protected by the hash chain.
+2. **Identity Model:** The demo UI selects from the seeded personas and passes `X-Actor-ID`; the server resolves the role from `users` and never accepts a client-supplied role.
+3. **5 Explicit Personas:** Database roles strictly support `Citizen`, `Officer`, `Field Officer`, and `Supervisor` with dedicated workspaces and scoped access.
+4. **Database Security:** Enforced by SQLite `BEFORE UPDATE` and `BEFORE DELETE` triggers aborting any mutation on `audit`.
+5. **Categories:** 4 core municipal categories (`Water Leak` 24h, `Garbage Collection` 24h, `Streetlight` 48h, `Pothole` 72h) + `Uncategorised` (72h).
+6. **SLA Clock Pausing:** `paused_at` and `total_paused_seconds` columns pause the SLA clock during `NEEDS_INFO` and extend deadlines upon receipt of info.
+7. **Concurrency:** Every request mutation supplies `expected_version` and increments `version` in the same transaction as its audit entry.
+8. **Audit Details:** Action-specific values are stored as canonical JSON and protected by the hash chain.
 
