@@ -22,7 +22,7 @@ The G-02 statement requires one complete workflow implemented end to end, not a 
 | Restrict status changes to permitted roles, enforced in the system, with refused attempts recorded | The role is read from the user record on the server, never trusted from the request. Refusals return an authorization error and are written to the audit log |
 | Track-appropriate deadline, overdue identification, visible escalation | Deadlines come from a per-category SLA table. An escalation job raises the level of overdue requests and logs each escalation |
 | Audit history of changes, refusals, assignments, escalations (who, what, when) | Append-only, hash-chained audit table with a chain-verification function |
-| AI may categorise, extract, and draft; it must not change status, assignment, or deadline | AI output is stored in a separate suggestions table. The AI module has no access path to the workflow service |
+| AI may categorise, extract, and draft; it must not change status, assignment, or deadline | AI engines receive complaint text and a narrow suggestion-write capability, never the workflow or request repository |
 
 Common booklet rules are also met: a working live MVP, meaningful AI use, explicit rules making consequential decisions, fictional data only, and a local fallback so the core demonstration does not depend on any external AI service.
 
@@ -43,12 +43,14 @@ The table is stored as data and is the single source of truth for what is allowe
 | ACKNOWLEDGED | ASSIGNED | Supervisor | Assignee must be an officer |
 | ACKNOWLEDGED | REJECTED | Supervisor | Reason required |
 | ASSIGNED | IN\_PROGRESS | Officer | Must be the assigned officer |
-| IN\_PROGRESS | RESOLVED | Officer | Must be the assigned officer |
+| IN\_PROGRESS | RESOLVED | Officer | Must be the assigned officer; non-empty resolution notes required |
 | RESOLVED | CLOSED | Citizen, Supervisor | Citizen must be the request owner |
-| RESOLVED | REOPENED | Citizen | Citizen must be the request owner |
+| RESOLVED | REOPENED | Citizen | Citizen must be the request owner; non-empty reopen reason required |
 | REOPENED | IN\_PROGRESS | Officer | Must be the assigned officer |
 
 Escalation is not a state. It is a level field on the request combined with an audit event, which keeps the state machine small and unambiguous.
+
+Category confirmation and reassignment are separate audited commands rather than artificial state changes. Officers and Supervisors may confirm a category. Supervisors may reassign an `ASSIGNED` or `IN_PROGRESS` request while preserving its state and recording a reason.
 
 ### 4.3 Validation order
 
@@ -62,19 +64,25 @@ Every attempted move is checked in the same order, and every failure is recorded
 
 Only after all checks pass is the state updated, and the state change and its audit entry are committed together.
 
+Every mutation also supplies the request's expected version. A stale version is refused with HTTP 409. The request update, version increment, and hash-chain append occur in one serialized transaction.
+
 ### 4.4 Roles
 
 - **Citizen:** submits requests, tracks them, confirms closure, or reopens a resolved request they own.
 - **Officer:** acknowledges requests, works the ones assigned to them, and marks them resolved.
 - **Supervisor:** assigns and reassigns work, rejects invalid requests, confirms categories, force-closes, and receives escalations.
 
+The MVP uses seeded identities sent through `X-Actor-ID`; the server always resolves the stored role. This is a transparent hackathon demonstration mechanism, not production authentication. Citizens can read only their own requests, Officers can read permitted intake and their assignments, and Supervisors can read all requests and the audit view.
+
 ## 5. Deadlines and Escalation
 
 ### 5.1 Deadline rule
 
-Each category has a service-level time. Illustrative values: water leak 24 hours, garbage collection 48 hours, streetlight 72 hours, pothole 7 days, with a default for uncategorised requests. A request's deadline is its creation time plus the SLA of its category. The deadline is always computed by this rule and never by AI.
+Each category has a service-level time. Illustrative values: water leak 24 hours, garbage collection 48 hours, streetlight 72 hours, pothole 7 days, with a default for uncategorised requests. A request's deadline is its current `sla_started_at` plus the SLA of its confirmed category. A citizen-provided category is stored only as `reported_category`; `Uncategorised` remains authoritative until an Officer or Supervisor confirms it. The deadline is always computed by deterministic code and never by AI.
 
 When an officer or supervisor confirms a category, the deadline is recomputed by the same rule and the change is recorded in the audit log with the old and new values.
+
+Reopening starts a new SLA cycle: `sla_started_at` is set to simulated now, the cycle and reopen counters increment, escalation returns to Level 0, and a fresh deadline is calculated. The reopen reason and reset values are audited atomically.
 
 ### 5.2 Overdue detection
 
@@ -85,25 +93,27 @@ A request is overdue when the current time is past its deadline and it is still 
 | Elapsed time against SLA | Escalation level | Recipient |
 | --- | --- | --- |
 | 1.0× | Level 1 | Supervisor |
-| 1.5× | Level 2 | Department head |
+| 1.5× | Level 2 | Seeded Municipal Head (`USR-SUP-01`, authorization role `Supervisor`) |
 
-The escalation job is idempotent: a request is raised only when its required level exceeds its current level. Each escalation is written to the audit log as a system action and shown on the request.
+The escalation job is idempotent: a conditional update advances a request only when its required level exceeds its current level, and a unique audit deduplication key prevents duplicate events for the same request, level, and SLA cycle. Each escalation is written to the audit log as a system action and shown on the request.
 
 ### 5.4 Simulated clock
 
-All time-dependent logic reads from a clock object rather than the system clock. An administrative control advances the simulated time so that overdue detection and escalation can be demonstrated within seconds and reproduced exactly.
+All time-dependent logic reads from a clock object rather than the system clock. Its offset/freeze state is stored in a singleton SQLite row. An administrative control advances simulated time so overdue detection and escalation can be demonstrated within seconds and reproduced exactly. Audit records retain wall-clock time and optional simulated time; audit ID defines ordering if the clock is reset.
 
 ## 6. Audit History
 
 The audit table records accepted changes, refused attempts, assignments, category confirmations, and escalations.
 
-**Fields per entry:** timestamp, actor, actor role, action, request identifier, from-state, to-state, outcome (accepted or refused), reason, previous hash, and entry hash.
+**Fields per entry:** wall timestamp, optional simulated time, actor, actor role, action, request identifier, from-state, to-state, outcome, reason, canonical structured details, optional deduplication key, previous hash, and entry hash.
 
 **Integrity properties:**
 
 - The table is append-only. Database triggers abort any UPDATE or DELETE.
 - Each entry's hash is the SHA-256 of the previous entry's hash combined with the entry's canonical content, forming a chain.
-- A verification function recomputes the chain from the start. Any edited, removed, or reordered entry breaks verification and identifies the first bad entry.
+- A verification function recomputes the retained chain from the start. It detects modified content and broken internal links and identifies the first bad entry.
+
+Without an external receipt for the expected chain head and record count, an internally anchored chain cannot prove that its final row was deleted or resist an administrator who rewrites the entire chain. External anchoring is outside this MVP, so the system does not claim universal tamper detection.
 
 Because refusals are recorded alongside successes, the history shows attempted misuse as well as normal activity, which supports the institution's ability to demonstrate fair treatment.
 
@@ -119,29 +129,30 @@ Because refusals are recorded alongside successes, the history shows attempted m
 ### 7.2 Boundary
 
 - Outputs are written only to an AI suggestions table, each tagged with the path that produced it (LLM or local fallback).
-- The AI module has no import path to the workflow service. An automated test asserts this, so the boundary holds structurally and not only by convention.
+- AI engines receive only complaint text and a narrow `insert_suggestion` repository capability, not a general database connection. AST and runtime tests check that they cannot import workflow repositories or mutate request/audit data.
 - A suggestion has effect only when a person acts on it. For example, confirming a suggested category is an officer action that is audited and then triggers the deadline rule.
 
 ### 7.3 Local fallback
 
-The core demonstration does not depend on any external service. The fallback uses TF-IDF features with logistic regression, trained on roughly 100 synthetic complaints written for the project, together with pattern matching for locations. An external model such as Gemini can sit behind the same interface as an optional upgrade. If it is unavailable or returns unusable output, the fallback produces the suggestion and the suggestion records which path was used.
+The core demonstration does not depend on any external service. The offline fallback uses the bundled scikit-learn dependency: TF-IDF features with logistic regression, trained on roughly 100 synthetic complaints written for the project, together with pattern matching for locations. An external model such as Gemini can sit behind the same interface as an optional upgrade. If it is unavailable or returns unusable output, the fallback produces the suggestion and records which path was used.
 
 ## 8. Data Model
 
 | Table | Purpose | Key fields |
 | --- | --- | --- |
 | users | Identity and role, the server-side source of truth for permissions | id, name, role |
-| requests | The complaint and its current workflow data | id, citizen\_id, text, category, state, assigned\_to, created\_at, deadline, escalation\_level |
+| requests | The complaint and its current workflow data | id, citizen\_id, reported/confirmed category, state, assigned\_to, SLA cycle/start, deadline, escalation level, version |
 | ai\_suggestions | Advisory output, isolated from workflow data | id, request\_id, kind, payload, source, created\_at |
-| audit | Append-only, hash-chained history | id, timestamp, actor, role, action, request\_id, from\_state, to\_state, outcome, reason, previous hash, hash |
+| audit | Append-only, hash-chained history | id, wall/simulated time, actor, role, action, request ID, states, outcome, reason, structured details, hashes |
+| clock\_state | Persisted simulated-clock configuration | offset, freeze state, frozen time, updated time |
 
 ## 9. System Architecture
 
 - **Workflow service:** holds the transition table, role and ownership checks, deadline rule, and escalation job. It is the only component that can change a request's state, assignment, or deadline.
 - **Audit service:** writes hash-chained entries inside the same transaction as the change it records, and exposes chain verification.
-- **AI service:** reads complaint text and writes only to the suggestions table.
-- **API layer:** authenticates the caller, resolves the role from the database, and passes requests to the workflow service. Refusals map to authorization or validation errors.
-- **User interface:** a citizen view for submission and tracking, an officer queue, and a supervisor dashboard showing overdue and escalated requests, the audit viewer, and chain verification.
+- **AI service:** receives complaint text and can call only the narrow suggestion repository.
+- **API layer:** resolves the seeded demo actor and role from the database, enforces row-level read scopes, and passes commands to the workflow service. Refusals map to authorization, validation, or version-conflict errors.
+- **User interface:** separate Citizen, Officer, Supervisor, and Audit pages sharing a base template. The Officer page includes both submitted intake and assigned-work queues.
 - **Technology:** Python with FastAPI and SQLite, a lightweight web interface, and scikit-learn for the local classifier.
 
 ## 10. Demonstrated Behaviours
@@ -149,11 +160,11 @@ The core demonstration does not depend on any external service. The fallback use
 The live system shows the following, each reproducible with the seeded fictional data:
 
 1. A citizen submits a complaint and the AI suggestion appears beside it.
-2. A direct API call by the citizen to mark the request RESOLVED is refused with an authorization error, and the refusal appears in the audit log.
-3. An officer attempting ASSIGNED to RESOLVED is refused because IN\_PROGRESS was skipped, with the reason shown.
-4. A supervisor assigns the request, the officer works it, and the citizen closes it, with every step audited.
-5. Advancing the simulated clock makes a request overdue and raises its escalation level, visible on the record.
-6. The audit trail is displayed and chain verification succeeds. After a row is altered directly in the database, verification fails and identifies the entry.
+2. After the complaint reaches `IN_PROGRESS`, a Citizen's otherwise valid request to mark it `RESOLVED` is refused with HTTP 403 and logged.
+3. From `ASSIGNED`, the assigned Officer's attempt to skip directly to `RESOLVED` is refused with HTTP 422 and the valid next state shown.
+4. The request follows acknowledge, assign, start, resolve-with-notes, and citizen closure, with every step audited.
+5. A separate seeded active complaint is advanced to 25 and then 36 elapsed hours to show Level 1 and Level 2 escalation.
+6. The normal audit chain verifies successfully. A standalone script alters only a disposable database copy; verification of that copy identifies the affected entry.
 7. With the AI component disabled, all workflow behaviour is unchanged and the suggestion panel states that the fallback was used.
 
 ## 11. Implementation Phases
@@ -170,6 +181,6 @@ The live system shows the following, each reproducible with the seeded fictional
 ## 12. Limitations
 
 - The local classifier is trained on a small synthetic set and is suitable for demonstration, not production accuracy.
-- Authentication uses seeded users with tokens. Phone and OTP login are not part of this solution.
+- Seeded demo identities passed through `X-Actor-ID` are not authentication. Production sessions, phone/OTP, and identity verification are not part of this solution.
 - SLA values and escalation recipients are illustrative configuration and would be set by the institution.
-- The hash chain makes tampering detectable; it does not prevent a database administrator from deleting the whole database. Anchoring the latest hash outside the system would be required for stronger guarantees.
+- The internal hash chain detects content changes and broken retained links unless an administrator recomputes the chain, but cannot prove final-row or whole-database deletion. Anchoring the head and record count outside the system would be required for stronger guarantees.

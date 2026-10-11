@@ -1,7 +1,7 @@
 # Plan 04: AI Advisory Layer & Structural Boundary
 
 ## 1. Executive Summary & Objective
-Plan 04 designs and implements the AI Advisory Layer for GovFix. The layer assists municipal officers by proposing ticket categories, extracting physical location cues and urgency levels, and drafting citizen response templates. Crucially, the AI is architecturally isolated: it writes advisory outputs solely to an isolated suggestions table, cannot alter ticket state, and includes a completely offline, zero-dependency local machine-learning fallback.
+Plan 04 designs and implements the AI Advisory Layer for GovFix. The layer assists municipal officers by proposing ticket categories, extracting physical location cues and urgency levels, and drafting citizen response templates. Crucially, the AI is isolated through a narrow application capability: it can submit suggestion records but cannot alter ticket state. The local fallback runs offline with bundled Python dependencies.
 
 ---
 
@@ -30,9 +30,9 @@ The design follows the fundamental VORTEXA rule: **AI suggests, deterministic ru
 ```
 
 ### 2.2 Boundary Invariants
-1. **Zero State Mutation:** The AI service has no database write access to the `requests` table or `audit` table.
+1. **No State-Mutation Capability:** The AI engine receives complaint text and a narrow `SuggestionRepository.insert_suggestion(...)` capability, never a general database connection or request repository.
 2. **No Reverse Imports:** The AI module (`src/ai/`) does not import the `workflow` service or any transition execution functions.
-3. **Automated Architectural Test:** A test parses the Abstract Syntax Tree (AST) of the AI module to verify that no prohibited imports or state-mutation calls exist.
+3. **Automated Architectural Tests:** AST tests reject prohibited workflow/repository imports, and runtime tests prove that the injected capability can create suggestions but cannot mutate requests or audit rows.
 4. **Human-in-the-Loop:** Suggestions have zero legal or operational effect until an authorized human acts on them (e.g., an officer clicking "Confirm Category", which triggers a distinct audited workflow action).
 
 ---
@@ -73,7 +73,7 @@ The design follows the fundamental VORTEXA rule: **AI suggests, deterministic ru
   ```
 - Tagged with `source = 'gemini_llm'`.
 
-### 4.2 Local Offline Fallback (Zero External Dependency)
+### 4.2 Local Offline Fallback (No External Service)
 - Fully functional when offline, without API keys, or if external requests fail.
 - **Classification:** `scikit-learn` `TfidfVectorizer` paired with `LogisticRegression` or `MultinomialNB`, trained on a bundled synthetic dataset of ~100 municipal complaints.
 - **Extraction:** Named regex pattern matching for streets, roads, sectors, and hazard keywords.
@@ -87,9 +87,10 @@ The design follows the fundamental VORTEXA rule: **AI suggests, deterministic ru
 2. `src/ai/local_classifier.py`: Offline scikit-learn model, vectorizer, and pre-trained weights/training script.
 3. `src/ai/gemini_engine.py`: Google Gemini API client with automatic fallback on failure or missing API key.
 4. `src/ai/dataset.json`: Synthetic dataset of 100 categorized municipal complaints.
-5. `src/services/suggestion_service.py`: Service coordinating suggestion generation and storing records in `ai_suggestions`.
+5. `src/services/suggestion_service.py`: Owns the narrow suggestion repository, coordinates generation, and stores records in `ai_suggestions` without exposing the general database connection to AI engines.
 6. `tests/test_ai_boundary.py`:
    - Unit test asserting AST of `src/ai` contains zero imports of `src/workflow`.
+   - Runtime capability test proving AI engines cannot mutate `requests` or `audit`.
    - Unit test asserting fallback accuracy on test complaints.
    - Unit test verifying graceful fallback when Gemini key is missing.
 
@@ -98,5 +99,5 @@ The design follows the fundamental VORTEXA rule: **AI suggests, deterministic ru
 ## 6. Confirmed Decisions & Implementation Notes
 1. **Dual-Path Strategy:** Confirmed dual-path with silent fallback. If `GEMINI_API_KEY` is present and functional, Gemini LLM is invoked; if missing or unreachable, the system automatically falls back to the local `scikit-learn` TF-IDF classifier without crashing or interrupting operations.
 2. **Suggestion Metadata:** Every suggestion record in `ai_suggestions` is tagged with `source='gemini_llm'` or `source='local_fallback'`.
-3. **Architectural Isolation:** Strict structural firewall enforced via automated AST unit tests to verify no import of `src/workflow` or write to `requests` exists in `src/ai`.
+3. **Architectural Isolation:** Application-level capability isolation is enforced through the narrow suggestion repository, AST checks, and runtime mutation tests. This is not described as SQLite table-level permission enforcement.
 

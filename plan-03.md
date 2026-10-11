@@ -14,6 +14,8 @@ Plan 03 builds the web user interface for GovFix. The UI provides three dedicate
   - `Supervisor Command Center (/supervisor)` - Impersonating Supervisor Rajesh Gupta (`USR-SUP-01`)
   - `Audit & Tamper Inspection (/audit)` - Verification & Security Log
 
+The routes share `base.html` for navigation and styling, but each role has its own template and page-specific script behavior. There is no single-page role-tab state.
+
 ---
 
 ## 3. Role-Based Views & Component Specifications
@@ -33,29 +35,34 @@ Plan 03 builds the web user interface for GovFix. The UI provides three dedicate
   - **Reopen Complaint:** Enabled only when in `RESOLVED` state. Opens a modal asking for reason, transitioning back to `REOPENED`.
 
 ### 3.2 Officer Workspace (`/officer`)
+- **Intake Queue:**
+  - Shows `SUBMITTED` complaints that Officers are permitted to acknowledge.
+  - `Acknowledge` is available here and removes the complaint from intake after success.
 - **Assigned Task Queue:**
   - Cards displaying assigned grievances filtered to current officer (`assigned_to == actor.id`).
   - Badges indicating SLA countdown timer, overdue status, and escalation level (`Level 1`, `Level 2`).
 - **Grievance Detail & Action Pane:**
   - Citizen complaint text and submission timestamp.
   - **AI Advisory Sidebar:**
-    - Suggested Category (with confidence score) + "Confirm Category" button.
+    - Suggested Category (with confidence score) + "Confirm Category" button using the dedicated category command and current request version.
     - Extracted Location & Urgency cues.
     - AI Draft Response + "Copy into Resolution Notes" button.
   - **Workflow Actions:**
-    - `Acknowledge`: Available when status is `SUBMITTED`.
+    - `Acknowledge`: Available for `SUBMITTED` items in the intake queue.
     - `Start Work (IN_PROGRESS)`: Available when status is `ASSIGNED` or `REOPENED`.
     - `Mark Resolved (RESOLVED)`: Requires resolution notes.
 
 ### 3.3 Supervisor Command Center (`/supervisor`)
 - **Intake & Triage Board:**
   - View all unassigned and newly submitted complaints.
-  - Action to assign ticket to specific officers with an officer dropdown.
+  - Action to acknowledge a submitted complaint before assignment.
+  - Action to assign an acknowledged ticket to a specific Officer.
   - Action to reject ticket with mandatory `rejection_reason`.
+  - Action to reassign an `ASSIGNED` or `IN_PROGRESS` ticket while preserving state and requiring a reason.
 - **Overdue & Escalations Board:**
   - Dedicated view showing tickets that have breached SLA thresholds:
     - `Level 1 Escalation`: Elapsed time >= 1.0x SLA (Highlighted Yellow).
-    - `Level 2 Escalation`: Elapsed time >= 1.5x SLA (Highlighted Red, flagged for Department Head).
+    - `Level 2 Escalation`: Elapsed time >= 1.5x SLA (Highlighted Red, routed to the seeded Municipal Head/Supervisor for the MVP).
 - **Force Closure:**
   - Ability for supervisor to administratively close disputed tickets in `RESOLVED` state.
 - **Simulated Clock Widget:**
@@ -65,13 +72,13 @@ Plan 03 builds the web user interface for GovFix. The UI provides three dedicate
   - Real-time audit log table showing `timestamp`, `actor`, `action`, `from_state`, `to_state`, `outcome` (ACCEPTED/REFUSED), `reason`, and cryptographic `hash`.
   - Refusals highlighted in red to demonstrate enforced security.
   - **"Verify Audit Chain" Button:** Runs cryptographic verification across all entries and displays green checkmark or red tamper alert with compromised record ID.
-  - **"Simulate Tamper" Demo Button:** Intentionally modifies a past database row to prove live tamper detection to judges.
+  - **Tamper Demo Notice:** Explains that `scripts/tamper_demo.py` modifies a disposable database copy; the normal UI provides verification only and never bypasses audit triggers.
 
 ---
 
 ## 4. Implementation Deliverables
-1. `src/templates/index.html`: Responsive unified dashboard with tabs for Citizen, Officer, Supervisor, and Audit views.
-2. `src/static/app.js`: Clean client-side state handling, API calls, role switching, and dynamic UI updates.
+1. `src/templates/base.html`, `citizen.html`, `officer.html`, `supervisor.html`, and `audit.html`: Separate role pages with shared navigation and styling.
+2. `src/static/app.js`: Shared API helpers, current request-version handling, and page-specific dynamic updates without client-side role switching.
 3. `src/static/styles.css`: Custom government portal styling complementing Tailwind CSS.
 4. `src/routes/ui.py`: FastAPI routes serving HTML pages and static assets.
 
@@ -82,4 +89,6 @@ Plan 03 builds the web user interface for GovFix. The UI provides three dedicate
 2. **AI Suggestions Display:** AI suggestions are displayed in the Officer and Supervisor workspaces to assist decision making without mutating data.
 3. **Audit Log Access:** Dedicated `/audit` route provides real-time audit inspection and chain verification.
 4. **FastAPI Templating:** Served directly using `Jinja2Templates` and static files, requiring no external Node.js build tools.
+5. **Demo Identity:** Each page selects a seeded identity and sends its ID through `X-Actor-ID`; roles always come from the server-side user record. This is not production authentication.
+6. **Visibility:** Citizens see only their requests, Officers see permitted intake plus their assignments, and Supervisors see all requests and the audit view.
 

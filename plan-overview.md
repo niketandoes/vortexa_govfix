@@ -13,12 +13,12 @@ It enforces deterministic state transitions, server-side role authorization, SLA
 
 | Plan | Phase Title | Focus Areas | Key Output Artifacts |
 | :--- | :--- | :--- | :--- |
-| [**Plan 01**](file:///c:/Users/niket/Documents/Hackathon-108/vortexa_govfix/plan-01.md) | **Foundation & Data Architecture** | SQLite schema, database triggers for append-only audit, user roles, SLA configuration, seed data | `src/database.py`, `src/schema.sql`, `src/seed.py`, `tests/test_foundation.py` |
-| [**Plan 02**](file:///c:/Users/niket/Documents/Hackathon-108/vortexa_govfix/plan-02.md) | **Core Workflow Engine & Refusal Logging** | 5-step validation pipeline, immutable transition table, role & ownership checks, refusal audit logging, atomic transactions | `src/workflow.py`, `src/routes/requests.py`, `tests/test_workflow.py` |
-| [**Plan 03**](file:///c:/Users/niket/Documents/Hackathon-108/vortexa_govfix/plan-03.md) | **Interface & Role-Based Workspaces** | Citizen portal, Officer workspace, Supervisor command center, SLA countdowns, role switcher | `src/templates/index.html`, `src/static/app.js`, `src/routes/ui.py` |
-| [**Plan 04**](file:///c:/Users/niket/Documents/Hackathon-108/vortexa_govfix/plan-04.md) | **AI Advisory Layer & Structural Boundary** | Dual-path AI (Gemini + offline scikit-learn fallback), location extraction, reply drafting, AST boundary verification | `src/ai/gemini_engine.py`, `src/ai/local_classifier.py`, `tests/test_ai_boundary.py` |
-| [**Plan 05**](file:///c:/Users/niket/Documents/Hackathon-108/vortexa_govfix/plan-05.md) | **Simulated Clock & Multi-Level Escalation** | Centralized simulated clock provider, dynamic SLA deadlines, idempotent escalation ladder (Level 1 & Level 2) | `src/services/clock_service.py`, `src/services/escalation_service.py`, `tests/test_escalation.py` |
-| [**Plan 06**](file:///c:/Users/niket/Documents/Hackathon-108/vortexa_govfix/plan-06.md) | **Hardening, Chain Verification & Adversarial Demo** | SHA-256 cryptographic hash-chaining, tamper detection engine, adversarial test suite, 7-step judging walkthrough | `src/services/verification_service.py`, `tests/test_adversarial.py`, `scripts/demo_walkthrough.py` |
+| [**Plan 01**](./plan-01.md) | **Foundation & Data Architecture** | SQLite schema, database triggers for append-only audit, user roles, SLA configuration, seed data | `src/database.py`, `src/schema.sql`, `src/seed.py`, `tests/test_foundation.py` |
+| [**Plan 02**](./plan-02.md) | **Core Workflow Engine & Refusal Logging** | State transitions, category confirmation, reassignment, role and ownership checks, concurrency, refusal logging | `src/workflow.py`, `src/routes/requests.py`, `tests/test_workflow.py` |
+| [**Plan 03**](./plan-03.md) | **Interface & Role-Based Workspaces** | Separate Citizen, Officer, Supervisor, and Audit pages with SLA countdowns | `src/templates/`, `src/static/app.js`, `src/routes/ui.py` |
+| [**Plan 04**](./plan-04.md) | **AI Advisory Layer & Structural Boundary** | Dual-path AI (Gemini + offline scikit-learn fallback), location extraction, reply drafting, capability isolation | `src/ai/gemini_engine.py`, `src/ai/local_classifier.py`, `tests/test_ai_boundary.py` |
+| [**Plan 05**](./plan-05.md) | **Simulated Clock & Multi-Level Escalation** | Persisted simulated clock, SLA cycles, dynamic deadlines, idempotent escalation | `src/services/clock_service.py`, `src/services/escalation_service.py`, `tests/test_escalation.py` |
+| [**Plan 06**](./plan-06.md) | **Hardening, Chain Verification & Adversarial Demo** | SHA-256 hash chaining, bounded tamper claims, adversarial tests, valid judging walkthrough | `src/services/verification_service.py`, `tests/test_adversarial.py`, `scripts/demo_walkthrough.py` |
 
 ---
 
@@ -56,9 +56,19 @@ It enforces deterministic state transitions, server-side role authorization, SLA
 
 ---
 
-## 4. Summary of Key Questions for Alignment
-Before proceeding with implementation, the key questions documented across each plan need confirmation to ensure zero hallucinations and absolute alignment:
+## 4. Confirmed Cross-Plan Decisions
+
 - **Architecture & Tech:** Pure FastAPI with `sqlite3` raw SQL for absolute trigger & WAL control.
-- **Frontend Approach:** Lightweight Single Page Dashboard with role switcher tab navigation.
+- **Frontend Approach:** Multi-page server-rendered interface with `/citizen`, `/officer`, `/supervisor`, and `/audit` routes and a shared base template.
 - **AI Engine:** Gemini 1.5 Flash + Scikit-Learn TF-IDF local fallback with automatic offline fallback when no API key is provided.
-- **Tamper Demonstration:** Built-in interactive demo toggle button in the supervisor UI + automated CLI script for judging.
+- **Demo Identity:** Seeded demo identities selected by the UI and sent through one documented actor header; this is not production authentication.
+- **Category Confirmation:** Officers and Supervisors may confirm a category through a dedicated audited command.
+- **Reassignment:** Supervisors may reassign active work while preserving its state and providing a reason.
+- **Reopening:** Reopening requires a reason and starts a new SLA and escalation cycle.
+- **Tamper Demonstration:** A standalone script modifies only a disposable database copy; the normal web application exposes verification but no trigger-bypass endpoint.
+
+---
+
+## 5. Repository-Level Deliverables
+
+In addition to phase-specific files, implementation must include `src/main.py`, `pyproject.toml` (or a pinned requirements file), `.env.example`, database bootstrap instructions, and README commands for setup, tests, and demo startup.

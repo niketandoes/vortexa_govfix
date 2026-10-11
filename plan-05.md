@@ -13,12 +13,13 @@ To ensure deterministic reproducibility, no workflow service or database query c
 ```
 ┌────────────────────────────────────────────────────────┐
 │                   ClockService                         │
-│  - base_wall_time: Real System Clock                  │
-│  - time_offset_seconds: float                          │
+│  - wall_now: Real UTC System Clock                    │
+│  - offset_seconds: integer                             │
 │  - is_frozen: bool                                     │
+│  - frozen_at: optional simulated UTC timestamp         │
 ├────────────────────────────────────────────────────────┤
 │  now() -> datetime:                                    │
-│    returns (base_wall_time + time_offset_seconds)      │
+│    frozen ? frozen_at : wall_now + offset_seconds      │
 └────────────────────────────────────────────────────────┘
 ```
 
@@ -29,7 +30,10 @@ To ensure deterministic reproducibility, no workflow service or database query c
   { "hours": 24 }
   ```
   Immediately triggers the escalation evaluation job.
+- `POST /api/v1/clock/freeze`: Stores the current simulated timestamp in `frozen_at`; repeated `now()` calls remain fixed until advance or reset.
 - `POST /api/v1/clock/reset`: Clears offsets, synchronizing back to real-world time.
+
+The singleton `clock_state` row persists offset/freeze state. Advance is relative to current simulated time. Reset clears the offset and freeze state. Audit records retain wall-clock `timestamp` plus optional `simulated_at`; audit order is always the increasing audit ID, so resetting simulated time cannot reorder history.
 
 ---
 
@@ -37,17 +41,23 @@ To ensure deterministic reproducibility, no workflow service or database query c
 
 ### 3.1 Initial Calculation
 - When a complaint is created, its deadline is computed deterministically:
-  $$\text{deadline} = \text{created\_at} + \text{SLA}[\text{category}]$$
+  $$\text{deadline} = \text{sla\_started\_at} + \text{SLA}[\text{category}]$$
 - Default SLA for `Uncategorised` is 72 hours.
 - **Rule:** AI never computes or modifies deadlines.
 
 ### 3.2 Category Confirmation & Deadline Recalculation
 - When an authorized officer or supervisor confirms or modifies a complaint's category (e.g. from `Uncategorised` to `Water Leak`), the deadline is recomputed:
-  $$\text{new\_deadline} = \text{created\_at} + \text{SLA}[\text{new\_category}]$$
+  $$\text{new\_deadline} = \text{sla\_started\_at} + \text{SLA}[\text{new\_category}]$$
 - The adjustment is committed with an `audit` log entry capturing:
   - `action = 'RECALCULATE_DEADLINE'`
   - `reason = 'Category updated from Uncategorised (72h) to Water Leak (24h)'`
   - `old_deadline` and `new_deadline` in the record payload.
+
+The dedicated category command is available to Officers and Supervisors in active states and stores old/new category and deadline values in `details_json`.
+
+### 3.3 Reopen SLA Cycle
+
+On `RESOLVED -> REOPENED`, the workflow transaction sets `sla_started_at` to simulated now, increments `sla_cycle` and `reopen_count`, resets `escalation_level` to 0, and calculates a fresh deadline from the confirmed category. The required reopen reason and all reset values are stored in the transition audit details.
 
 ---
 
@@ -61,13 +71,13 @@ A grievance is marked `is_overdue = true` if and only if:
 
 ### 4.2 Multi-Level Escalation Ladder
 Escalation is calculated based on the ratio of elapsed time against the category's SLA:
-$$\text{elapsed\_ratio} = \frac{\text{current\_simulated\_time} - \text{created\_at}}{\text{SLA\_duration}}$$
+$$\text{elapsed\_ratio} = \frac{\text{current\_simulated\_time} - \text{sla\_started\_at}}{\text{SLA\_duration}}$$
 
 | Elapsed Ratio | Target Escalation Level | Responsible Recipient | Display Badge |
 | :--- | :--- | :--- | :--- |
 | $< 1.0\times$ | `Level 0` | Assigned Officer | Normal (Green) |
 | $\ge 1.0\times$ | `Level 1` | Supervisor | Overdue (Amber Warning) |
-| $\ge 1.5\times$ | `Level 2` | Department Head | Critical (Red Alert) |
+| $\ge 1.5\times$ | `Level 2` | Seeded Municipal Head (`USR-SUP-01`, role `Supervisor`) | Critical (Red Alert) |
 
 ### 4.3 Idempotency Invariant
 - The escalation job can run repeatedly without duplicating audit logs or corrupting state:
@@ -79,6 +89,8 @@ $$\text{elapsed\_ratio} = \frac{\text{current\_simulated\_time} - \text{created\
   - `action = 'ESCALATE_REQUEST'`
   - `reason = 'SLA elapsed ratio reached 1.0x (Level 1 escalation to Supervisor)'`
 
+The implementation uses a conditional request update inside `BEGIN IMMEDIATE` and inserts the audit entry only when exactly one row advances. The audit `dedupe_key` value `escalation:{request_id}:{sla_cycle}:{target_level}` uniquely prevents duplicate escalation events for the same cycle under concurrent queue reads.
+
 ---
 
 ## 5. Implementation Deliverables
@@ -89,14 +101,18 @@ $$\text{elapsed\_ratio} = \frac{\text{current\_simulated\_time} - \text{created\
    - Unit test creating a ticket with 24h SLA.
    - Advancing clock by 25h -> asserts `is_overdue == True` and `escalation_level == 1`.
    - Running escalation job again -> asserts no duplicate audit entries (idempotency).
-   - Advancing clock by 37h (1.5x) -> asserts `escalation_level == 2`.
+   - Advancing by 11 additional hours (36h total, 1.5x) -> asserts `escalation_level == 2`.
    - Marking ticket `RESOLVED` -> asserts ticket is no longer considered overdue.
+   - Reopening it -> asserts a new SLA cycle, fresh deadline, and escalation level 0.
+   - Concurrent evaluation -> asserts one escalation event per level and SLA cycle.
+   - Resetting the clock -> asserts audit ID order remains authoritative even if simulated time moves backward.
 
 ---
 
 ## 6. Confirmed Decisions & Implementation Notes
 1. **Escalation Execution:** Confirmed **Event-driven & On-demand**. Escalation checks execute immediately whenever the simulated clock is advanced (`/api/v1/clock/advance`) or when grievance queues are queried, eliminating unnecessary background polling threads while ensuring instant state accuracy.
-2. **Calendar Time SLA:** SLA calculations use continuous calendar hours from `created_at` as defined in the VORTEXA problem statement.
-3. **Escalation Irreversibility:** Escalation levels (Level 1, Level 2) remain elevated on active cases until the issue is formally marked `RESOLVED`, guaranteeing supervisor visibility.
-4. **Idempotent Audit Log:** The engine checks `target_level > current_level` before logging escalations, ensuring multiple queries or clock ticks do not duplicate audit records.
+2. **Calendar Time SLA:** SLA calculations use continuous calendar hours from the current `sla_started_at`; the first cycle starts at `created_at`.
+3. **Escalation Lifecycle:** Levels remain elevated during an active SLA cycle until resolution. Reopening creates a new cycle and resets the level to 0 in the same transaction.
+4. **Idempotent Audit Log:** Conditional updates, serialized writes, and the escalation `dedupe_key` uniqueness guard prevent duplicates.
+5. **Level 2 Recipient:** The MVP uses `USR-SUP-01`, the seeded Municipal Head with authorization role `Supervisor`; a separate notification-recipient model may be added later.
 

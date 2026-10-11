@@ -16,12 +16,14 @@ The transition table is defined as immutable code configuration. Any state chang
 | 3 | `ACKNOWLEDGED` | `ASSIGNED` | `Supervisor` | Must supply `assigned_to` officer ID; assignee role must be `Officer`. |
 | 4 | `ACKNOWLEDGED` | `REJECTED` | `Supervisor` | Must supply non-empty `rejection_reason`. |
 | 5 | `ASSIGNED` | `IN_PROGRESS` | `Officer` | Actor must strictly match `assigned_to`. |
-| 6 | `IN_PROGRESS` | `RESOLVED` | `Officer` | Actor must strictly match `assigned_to`. May supply `resolution_notes`. |
+| 6 | `IN_PROGRESS` | `RESOLVED` | `Officer` | Actor must match `assigned_to` and supply non-empty `resolution_notes`. |
 | 7 | `RESOLVED` | `CLOSED` | `Citizen`, `Supervisor` | If actor is Citizen, must be the request owner (`citizen_id == actor.id`). |
-| 8 | `RESOLVED` | `REOPENED` | `Citizen` | Must be the request owner (`citizen_id == actor.id`). |
+| 8 | `RESOLVED` | `REOPENED` | `Citizen` | Must be the request owner and supply a non-empty `reopen_reason`; starts a new SLA cycle. |
 | 9 | `REOPENED` | `IN_PROGRESS` | `Officer` | Actor must strictly match `assigned_to`. |
 
 > **Crucial Rule:** Escalation is **not** a state. It is a level attribute (`escalation_level = 0, 1, 2`) with audit events, keeping the state machine minimal and unambiguous.
+
+Assignment, reassignment, and category confirmation are audited commands, not artificial state transitions. Reassignment preserves `ASSIGNED` or `IN_PROGRESS`; category confirmation preserves state and deterministically recalculates the current SLA deadline.
 
 ---
 
@@ -59,9 +61,12 @@ Incoming Transition Request
           │ (Passes)
           ▼
   Atomic DB Transaction:
-  1. Update `requests` state & attributes
-  2. Insert `audit` entry (outcome='ACCEPTED')
+  1. Compare `expected_version` with the stored request version
+  2. Update `requests` state & attributes and increment `version`
+  3. Insert `audit` entry (outcome='ACCEPTED')
 ```
+
+Every mutating command requires `expected_version`. A mismatch returns HTTP 409 and records a refused attempt without overwriting the newer request. Request mutation and hash-chain append run in one serialized SQLite transaction (`BEGIN IMMEDIATE`) so concurrent writers cannot reuse the same predecessor hash.
 
 ---
 
@@ -75,7 +80,7 @@ When a transition fails, an entry is immediately committed to the `audit` table 
 - `from_state = request.state`
 - `to_state = target_state`
 
-### 4.2 API Failure Contract (HTTP 403 / 422)
+### 4.2 API Failure Contract (HTTP 403 / 409 / 422)
 ```json
 {
   "success": false,
@@ -97,8 +102,8 @@ When a transition fails, an entry is immediately committed to the `audit` table 
 
 ### 5.1 `POST /api/v1/requests`
 - **Role:** Citizen
-- **Payload:** `{"title": "...", "text": "...", "category": "Water Leak" (optional)}`
-- **Action:** Validates citizen identity, calculates initial deadline, inserts request in `SUBMITTED` state, and writes audit record `SUBMIT_COMPLAINT`.
+- **Payload:** `{"title": "...", "text": "...", "reported_category": "Water Leak" (optional)}`
+- **Action:** Validates citizen identity, stores the optional value only as a citizen-reported hint, uses `Uncategorised` for the confirmed category and initial 72-hour SLA, inserts the request in `SUBMITTED`, and writes `SUBMIT_COMPLAINT`.
 
 ### 5.2 `POST /api/v1/requests/{id}/transition`
 - **Role:** Citizen, Officer, or Supervisor (resolved from DB via actor identity)
@@ -106,18 +111,42 @@ When a transition fails, an entry is immediately committed to the `audit` table 
   ```json
   {
     "to_state": "IN_PROGRESS",
+    "expected_version": 3,
     "assigned_to": "USR-OFF-01",      // required for ASSIGNED
     "rejection_reason": "...",        // required for REJECTED
-    "resolution_notes": "..."         // optional for RESOLVED
+    "resolution_notes": "...",        // required for RESOLVED
+    "reopen_reason": "..."            // required for REOPENED
   }
   ```
 - **Action:** Runs 5-step validation, updates request state atomically with audit entry.
 
-### 5.3 `GET /api/v1/requests/{id}`
+On `RESOLVED -> REOPENED`, the same transaction increments `reopen_count` and `sla_cycle`, sets `sla_started_at` to simulated now, recalculates `deadline`, resets `escalation_level` to 0, and records these values in audit details. The MVP permits repeated reopening; a policy limit can be added later without changing the state model.
+
+### 5.3 `POST /api/v1/requests/{id}/category`
+
+- **Roles:** Officer or Supervisor.
+- **Payload:** `{"category": "Water Leak", "expected_version": 3}`.
+- **Allowed states:** Any active state.
+- **Action:** Validates the configured category, preserves state, recomputes `deadline` from `sla_started_at`, increments `version`, and writes one `CONFIRM_CATEGORY` audit record containing old/new category and deadline values.
+
+### 5.4 `POST /api/v1/requests/{id}/reassign`
+
+- **Role:** Supervisor.
+- **Payload:** `{"assigned_to": "USR-OFF-02", "reason": "...", "expected_version": 4}`.
+- **Allowed states:** `ASSIGNED` or `IN_PROGRESS`.
+- **Action:** Validates the new assignee is an Officer, requires a non-empty reason, preserves state, increments `version`, and writes one `REASSIGN_REQUEST` audit record containing old/new assignee IDs.
+
+### 5.5 `GET /api/v1/requests/{id}`
 - Returns request details, current SLA deadline, overdue status, escalation level, and an array of `permitted_actions` calculated dynamically based on caller role.
 
-### 5.4 `GET /api/v1/requests`
+### 5.6 `GET /api/v1/requests`
 - Filterable query parameters: `state`, `assigned_to`, `citizen_id`, `category`, `is_overdue`.
+- **Read scopes:** Citizens can read only their requests; Officers can read the `SUBMITTED` intake queue and their assigned requests; Supervisors can read all requests. Client filters may narrow, but never expand, the server-enforced scope.
+
+### 5.7 `GET /api/v1/audit`
+
+- **Role:** Supervisor in the seeded demo identity model.
+- Returns audit records and verification status; it never exposes a mutation or trigger-bypass operation.
 
 ---
 
@@ -129,16 +158,20 @@ When a transition fails, an entry is immediately committed to the `audit` table 
    - Happy path: `SUBMITTED` -> `ACKNOWLEDGED` -> `ASSIGNED` -> `IN_PROGRESS` -> `RESOLVED` -> `CLOSED`.
    - Reopen path: `RESOLVED` -> `REOPENED` -> `IN_PROGRESS` -> `RESOLVED`.
    - Skipped state refusal: `ASSIGNED` directly to `RESOLVED` (fails step 2).
-   - Role violation refusal: Citizen attempting `RESOLVED` (fails step 3).
+   - Role violation refusal: Citizen attempting the valid `IN_PROGRESS` -> `RESOLVED` edge (fails step 3 with HTTP 403).
    - Non-assigned officer refusal: Officer B trying to start Officer A's ticket (fails step 4).
    - Missing fields refusal: Rejecting without a reason (fails step 5).
-   - Verifying all refusals are stored in `audit`.
+   - Category confirmation and reassignment command contracts.
+   - Reopen SLA-cycle reset and audit details.
+   - Stale `expected_version` conflict handling and concurrent writer behavior.
+   - Read-scope enforcement and verification that all refusals are stored in `audit`.
 
 ---
 
-## 7. Detailed Clarification Questions & Design Decisions
-To prevent assumptions and hallucinations, please clarify the following points for Plan 02:
-1. **Category Confirmation Role:** Who is allowed to confirm or change the category of a ticket: Supervisor only, or both Officer and Supervisor?
-2. **Reopening Limits:** Can a citizen reopen a complaint indefinitely, or should there be a maximum reopen count (e.g. max 2 times) or a time window (e.g. within 7 days of resolution)?
-3. **Reassignment Rules:** If a ticket is already `ASSIGNED` or `IN_PROGRESS`, can a Supervisor reassign it to a different Officer? (If so, does it stay in its current state or revert to `ASSIGNED`?)
-4. **Optimistic Concurrency / Race Conditions:** Should requests have an `updated_at` or `version` integer check to prevent conflicting concurrent transitions?
+## 7. Confirmed Design Decisions
+
+1. **Category Confirmation:** Officers and Supervisors may confirm or change a category through the dedicated command.
+2. **Reopening:** The MVP permits repeated reopening, requires a reason, and starts a new SLA/escalation cycle each time.
+3. **Reassignment:** Supervisors may reassign `ASSIGNED` or `IN_PROGRESS` work; state is preserved and a reason is mandatory.
+4. **Optimistic Concurrency:** Every mutation requires `expected_version`; stale requests return HTTP 409.
+5. **Demo Identity:** `X-Actor-ID` identifies a seeded user and the server resolves its stored role. This is a demonstration mechanism, not authentication.

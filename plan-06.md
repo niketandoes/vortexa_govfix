@@ -35,7 +35,10 @@ Record N-1 ──[ hash ]──┐
        "from_state": entry.from_state,
        "to_state": entry.to_state,
        "outcome": entry.outcome,
-       "reason": entry.reason or ""
+       "reason": entry.reason or "",
+       "details_json": canonicalize_json(entry.details_json),
+       "dedupe_key": entry.dedupe_key or "",
+       "simulated_at": entry.simulated_at or ""
    }, sort_keys=True, separators=(',', ':'))
    ```
 3. **Current Entry Hash:**
@@ -69,10 +72,10 @@ The verification service traverses all audit records in ascending order:
    }
    ```
 
+This internally anchored chain detects modified content and broken links when an attacker does not also recompute all later hashes. It does not by itself prove that the final row was deleted or resist an administrator who rewrites the entire chain. Stronger detection requires a trusted external receipt containing the expected chain head and record count.
+
 ### 3.2 Live Tamper Demonstration Capability
-For live judging:
-- A controlled testing endpoint `POST /api/v1/demo/tamper` (or CLI script `scripts/tamper_demo.py`) that temporarily bypasses triggers on a test database to modify an old row (e.g. changing an audit outcome from `REFUSED` to `ACCEPTED`).
-- Running the verification immediately flags the tampered row in red on the UI.
+For live judging, `scripts/tamper_demo.py` first copies the seeded database to a disposable demo path, removes the copy's mutation trigger, and modifies an old row (for example changing `REFUSED` to `ACCEPTED`). Verification against that copy immediately flags the affected row in red. The normal application database and web API expose no trigger-bypass capability.
 
 ---
 
@@ -83,24 +86,26 @@ The test suite formally validates all 7 core invariants under adversarial condit
 | Invariant | Test Method | Expected Outcome |
 | :--- | :--- | :--- |
 | **State Skipping** | Attempt transition `ASSIGNED` ➔ `RESOLVED` directly | Refused with HTTP 422, `from_state` and allowed states in error, logged to audit. |
-| **Unauthorized Role** | Citizen attempts `POST /transition` to `RESOLVED` | Refused with HTTP 403, logged as role violation in audit. |
+| **Unauthorized Role** | From `IN_PROGRESS`, Citizen attempts the otherwise valid transition to `RESOLVED` | Refused with HTTP 403, logged as role violation in audit. |
 | **Tamper Resistance** | Update a row directly in SQLite | Trigger aborts update; if forced, verification fails and identifies row. |
-| **AI Boundary Isolation** | AST parsing of `src/ai/` codebase | Fails test if any import of `src/workflow` or write to `requests` is detected. |
+| **AI Boundary Isolation** | AST checks plus runtime capability tests | Fails if AI imports workflow/request repositories or can mutate `requests`/`audit`. |
 | **Offline Resilience** | Disconnect external internet / remove API key | System switches cleanly to local TF-IDF fallback with zero errors. |
-| **Idempotent Escalation** | Trigger escalation job multiple times at same clock time | Exactly one escalation audit entry is written; no duplicates. |
+| **Idempotent Escalation** | Run concurrent evaluation at the same clock time | Exactly one escalation audit entry per request, level, and SLA cycle. |
 | **Ownership Enforcement** | Citizen A attempts to close/reopen Citizen B's complaint | Refused with HTTP 403, logged to audit. |
 
 ---
 
 ## 5. Live Demo Script (Step-by-Step for Judges)
 
-1. **Step 1 — Complaint & AI Advisory:** Submit a complaint as Ramesh (Citizen). Point out that AI suggests `Water Leak` (94% confidence) and extracts the location, but status remains strictly `SUBMITTED`.
-2. **Step 2 — Security Refusal (Citizen):** As citizen, attempt an unauthorized status change to `RESOLVED`. Show instant HTTP 403 and the refusal row appearing in the audit log.
-3. **Step 3 — Invalid Move Refusal (Officer):** Switch to Officer Kumar. Try to mark the complaint `RESOLVED` while skipping `IN_PROGRESS`. Show the specific refusal reason naming the skipped state.
-4. **Step 4 — Compliant Happy Path:** Supervisor assigns to Officer Kumar ➔ Officer starts work ➔ Officer resolves with notes ➔ Citizen confirms closure. Inspect complete audit trail.
-5. **Step 5 — Time Fast-Forward & Escalation:** Advance simulated clock by +25 hours. Show ticket badge change to Amber (`Level 1 Overdue`), then advance +15 hours to trigger Red (`Level 2 Escalation`).
-6. **Step 6 — Audit Verification & Tamper Catch:** Click "Verify Audit Chain" (Green checkmark). Click "Simulate Tamper" to alter record #3. Re-run verification: immediate Red alert flagging row #3!
-7. **Step 7 — Offline Fallback:** Unset Gemini API key. Submit a new complaint. Show that local scikit-learn classifier tags the suggestion as `local_fallback` with full operational continuity.
+The walkthrough uses two named records so the happy path and escalation proof do not invalidate one another.
+
+1. **Step 1 — Complaint A and AI Advisory:** Submit Complaint A as Ramesh. Show the `Water Leak` suggestion and extracted location while the confirmed category remains `Uncategorised` and state remains `SUBMITTED`.
+2. **Step 2 — Acknowledge and Assign:** Officer Kumar acknowledges Complaint A from the intake queue. Supervisor Gupta assigns it to Kumar. Confirm that the state is now `ASSIGNED`.
+3. **Step 3 — Invalid Move Refusal:** As Officer Kumar, request `ASSIGNED -> RESOLVED`. Show HTTP 422 and the refusal naming `IN_PROGRESS` as the valid next state.
+4. **Step 4 — Role Refusal and Happy Path:** Kumar starts work so Complaint A becomes `IN_PROGRESS`. Switch to Ramesh and request the otherwise valid `IN_PROGRESS -> RESOLVED` edge; show HTTP 403 and the logged role refusal. Switch back to Kumar, resolve with non-empty notes, then let Ramesh close it.
+5. **Step 5 — Complaint B Escalation:** Select the separately seeded active 24-hour Water Leak complaint. Advance to 25 elapsed hours for Amber Level 1, then advance 11 additional hours to 36 total for Red Level 2. Complaint A remains closed and is never used for this step.
+6. **Step 6 — Audit Verification and Tamper Catch:** Verify the normal chain successfully. Run `scripts/tamper_demo.py` to create and alter a disposable database copy, point verification at that copy, and show the first compromised row. The normal database is untouched.
+7. **Step 7 — Offline Fallback:** Unset the Gemini API key and submit a new complaint. Show that the bundled scikit-learn classifier produces a `local_fallback` suggestion without affecting workflow behavior.
 
 ---
 
@@ -112,8 +117,8 @@ The test suite formally validates all 7 core invariants under adversarial condit
 
 ---
 
-## 7. Detailed Clarification Questions & Design Decisions
-To prevent assumptions and hallucinations, please clarify the following points for Plan 06:
-1. **Tamper Demo Access:** Should the `/api/v1/demo/tamper` endpoint be included directly in the application behind an `ENVIRONMENT=demo` flag, or strictly executed via a standalone python script?
-2. **External Hash Anchor:** Should the latest audit chain hash be periodically exported to an external text file / receipt file (`audit_receipt.json`) to demonstrate off-chain anchoring?
-3. **Interactive Demo Runner:** Would you like an automated interactive script (`python demo.py`) that steps through each of the 7 stages with pauses and colored console outputs for presentations?
+## 7. Confirmed Design Decisions
+
+1. **Tamper Demo Access:** Tampering is available only through a standalone script operating on a disposable database copy; no HTTP bypass endpoint is shipped.
+2. **External Hash Anchor:** External anchoring is outside the MVP. Documentation therefore states the tail-deletion limitation explicitly.
+3. **Interactive Runner:** `scripts/demo_walkthrough.py` automates the seven stages with named records and asserts the expected HTTP status and starting state before each action.
