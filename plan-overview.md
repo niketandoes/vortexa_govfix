@@ -13,7 +13,7 @@ It enforces deterministic state transitions, server-side role authorization, SLA
 
 | Plan | Phase Title | Focus Areas | Key Output Artifacts |
 | :--- | :--- | :--- | :--- |
-| [**Plan 01**](./plan-01.md) | **Foundation & Data Architecture** | SQLite schema, database triggers for append-only audit, 5 persona roles (Citizen, Officer, Field Officer, Supervisor, Audit), SLA configuration, seed data | `src/database.py`, `src/schema.sql`, `src/seed.py`, `tests/test_foundation.py` |
+| [**Plan 01**](./plan-01.md) | **Foundation & Data Architecture** | SQLite schema, database triggers for append-only audit, 5 persona roles (Citizen, Officer, Field Officer, Supervisor, Audit Inspector), SLA and triage-target configuration, seed data | `src/database.py`, `src/schema.sql`, `src/seed.py`, `tests/test_foundation.py` |
 | [**Plan 02**](./plan-02.md) | **Core Workflow Engine & Refusal Logging** | State transitions (9 canonical states including NEEDS_INFO), role and ownership checks, concurrency, SLA clock pause/resume, refusal logging | `src/workflow.py`, `src/routes/requests.py`, `tests/test_workflow.py` |
 | [**Plan 03**](./plan-03.md) | **Interface & Role-Based Workspaces** | Five distinct personas: Citizen (`/citizen`), Officer Triage (`/officer`), Field Officer (`/field-officer`), Supervisor (`/supervisor`), Audit Inspector (`/audit`) | `src/templates/`, `src/static/app.js`, `src/routes/ui.py` |
 | [**Plan 04**](./plan-04.md) | **AI Advisory Layer & Structural Boundary** | Dual-path AI (Gemini + offline scikit-learn fallback), location extraction, reply drafting, capability isolation | `src/ai/gemini_engine.py`, `src/ai/local_classifier.py`, `tests/test_ai_boundary.py` |
@@ -69,6 +69,9 @@ It enforces deterministic state transitions, server-side role authorization, SLA
 - **Category Confirmation:** Officers and Supervisors may confirm a category through a dedicated audited command.
 - **Reassignment:** Supervisors may reassign active work (`ASSIGNED` or `IN_PROGRESS`) to another Field Officer while preserving state and providing a mandatory reason.
 - **Reopening:** Reopening requires a reason, starts a new SLA and escalation cycle, and closed complaints may be reopened within a 7-day period.
+- **Required Evidence:** Complaint submission requires location details; Field Officer resolution requires notes plus structured completion evidence.
+- **Citizen Appeals:** A Citizen may submit an appeal while a request is `REJECTED`; the state remains `REJECTED` until a Supervisor approves it back to `ACKNOWLEDGED`.
+- **Triage Target:** Every new complaint receives a separate 2-hour `triage_deadline`; citizen-waiting time in `NEEDS_INFO` extends both the resolution and pending triage deadlines.
 - **Tamper Demonstration:** A standalone script modifies only a disposable database copy; the normal web application exposes verification but no trigger-bypass endpoint.
 
 ---
