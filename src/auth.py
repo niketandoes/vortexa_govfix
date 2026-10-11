@@ -20,18 +20,34 @@ from src.services.clock_service import ClockService
 
 
 # Initialize Firebase Admin SDK idempotently
-def _init_firebase_admin() -> None:
-    if firebase_admin._apps:
+def _init_firebase_admin(force: bool = False) -> None:
+    if firebase_admin._apps and not force:
         return
+    if firebase_admin._apps and force:
+        for app in list(firebase_admin._apps.values()):
+            try:
+                firebase_admin.delete_app(app)
+            except Exception:
+                pass
 
-    # Check for service account or credentials
-    cred_path = os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH") or os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    from pathlib import Path
+    cred_path = (
+        os.getenv("FIREBASE_CREDENTIALS_PATH")
+        or os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH")
+        or os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    )
+    if not cred_path or not os.path.exists(cred_path):
+        root_dir = Path(__file__).resolve().parents[1]
+        matches = list(root_dir.glob("*firebase-adminsdk*.json")) or list(root_dir.glob("gov-fix-*.json"))
+        if matches:
+            cred_path = str(matches[0])
+
     if cred_path and os.path.exists(cred_path):
         cred = credentials.Certificate(cred_path)
         firebase_admin.initialize_app(cred)
     else:
         # Emulator or local dev fallback: initialize with project id
-        project_id = os.getenv("FIREBASE_PROJECT_ID", "govfix-demo")
+        project_id = os.getenv("FIREBASE_PROJECT_ID", "gov-fix")
         firebase_admin.initialize_app(options={"projectId": project_id})
 
 
@@ -47,42 +63,68 @@ def get_db() -> sqlite3.Connection:
 
 
 def verify_token_payload(token: str) -> dict[str, Any]:
-    """Verify Firebase ID token and extract payload.
+    """Verify Firebase ID token or Google ID token and extract payload.
     
-    Supports real Firebase tokens, Auth Emulator tokens, and offline dev mock tokens.
+    Supports real Firebase tokens, Google OAuth2 ID tokens, Auth Emulator tokens, and offline dev mock tokens.
     """
     # Check for dev / test mock tokens (e.g. "mock-token-USR-CIT-01" or "mock-token-citizen1@govfix.local")
     if token.startswith("mock-token-") or token.startswith("test-token-"):
-        identifier = token.split("mock-token-")[-1].split("test-token-")[-1]
+        from urllib.parse import unquote
+        raw_id = token.split("mock-token-")[-1].split("test-token-")[-1]
+        identifier = unquote(raw_id)
+        email = identifier if "@" in identifier else f"{identifier.lower()}@govfix.local"
         return {
             "uid": f"uid-{identifier}",
-            "email": identifier if "@" in identifier else f"{identifier.lower()}@govfix.local",
+            "email": email,
             "email_verified": True,
+            "name": identifier.split("@")[0].title() if "@" in identifier else identifier,
             "mock": True,
         }
 
+    # 1. Try Firebase Admin verify_id_token
     try:
         decoded = firebase_auth.verify_id_token(token, clock_skew_seconds=60)
         return decoded
-    except Exception as e:
-        # Fallback for JWT parsing in emulator or dev environments without active internet keys
-        import jwt
-        try:
-            unverified = jwt.decode(token, options={"verify_signature": False}, algorithms=["RS256", "HS256"])
-            uid = unverified.get("user_id") or unverified.get("uid") or unverified.get("sub")
-            if uid:
-                return {
-                    "uid": uid,
-                    "email": unverified.get("email", ""),
-                    "email_verified": unverified.get("email_verified", False),
-                }
-        except Exception:
-            pass
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid or expired authentication token: {e}",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    except Exception:
+        pass
+
+    # 2. Try Google OAuth2 ID token verification (Google Identity Services / GIS)
+    try:
+        from google.oauth2 import id_token as google_id_token
+        from google.auth.transport import requests as google_requests
+        google_payload = google_id_token.verify_oauth2_token(token, google_requests.Request())
+        if google_payload:
+            return {
+                "uid": google_payload.get("sub"),
+                "email": google_payload.get("email"),
+                "email_verified": google_payload.get("email_verified", True),
+                "name": google_payload.get("name") or google_payload.get("email", "").split("@")[0].title(),
+                "picture": google_payload.get("picture", ""),
+            }
+    except Exception:
+        pass
+
+    # 3. Fallback for JWT parsing in emulator, mock test tokens, or dev environments
+    import jwt
+    try:
+        unverified = jwt.decode(token, options={"verify_signature": False}, algorithms=["RS256", "HS256"])
+        uid = unverified.get("user_id") or unverified.get("uid") or unverified.get("sub")
+        if uid:
+            return {
+                "uid": uid,
+                "email": unverified.get("email", ""),
+                "email_verified": unverified.get("email_verified", False),
+                "name": unverified.get("name") or unverified.get("displayName", ""),
+                "picture": unverified.get("picture", ""),
+            }
+    except Exception:
+        pass
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid or expired authentication token",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 async def get_current_user(
@@ -150,6 +192,40 @@ async def get_current_user(
                 connection.execute("UPDATE users SET firebase_uid = ? WHERE id = ?", (uid, row["id"]))
                 connection.commit()
                 row = connection.execute("SELECT * FROM users WHERE id = ?", (row["id"],)).fetchone()
+
+        if not row:
+            try:
+                from src.mongodb import get_user_from_mongodb
+                mg_user = get_user_from_mongodb(uid or email or "")
+                if mg_user and mg_user.get("id"):
+                    connection.execute(
+                        """
+                        INSERT INTO users (id, name, email, role, department, firebase_uid, status, is_verified)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(id) DO UPDATE SET
+                            name = excluded.name,
+                            email = excluded.email,
+                            role = excluded.role,
+                            department = excluded.department,
+                            firebase_uid = excluded.firebase_uid,
+                            status = excluded.status,
+                            is_verified = excluded.is_verified
+                        """,
+                        (
+                            mg_user["id"],
+                            mg_user.get("name", "User"),
+                            mg_user.get("email", email or ""),
+                            mg_user.get("role", "Citizen"),
+                            mg_user.get("department"),
+                            mg_user.get("firebase_uid", uid),
+                            mg_user.get("status", "active"),
+                            mg_user.get("is_verified", 1),
+                        ),
+                    )
+                    connection.commit()
+                    row = connection.execute("SELECT * FROM users WHERE id = ?", (mg_user["id"],)).fetchone()
+            except Exception:
+                pass
 
         if not row:
             try:

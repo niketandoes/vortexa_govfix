@@ -344,3 +344,106 @@ What was done:
   8. Verified full test suite: 140/140 tests pass with 100% pass rate.
 
 Why it was done: To complete the requested live migration to MongoDB Atlas, purge old data, and verify full end-to-end functionality.
+
+
+Timestamp: 2026-10-11 19:35:00
+
+What was done: 
+- Connected Google Authentication via Firebase Admin SDK service account and implemented Citizen "Sign in with Google" / "Register with Google" flows:
+  1. Service Account & Web Client Integration:
+     - Discovered and integrated `gov-fix-firebase-adminsdk-fbsvc-7184d66b1e.json` in the project root (`project_id: gov-fix`).
+     - Initialized Firebase Web App (`appId: 1:887113920685:web:29e64ae908d8cd62895624`, `apiKey: AIzaSyCtsAkV4FhIqI2iqI0woZ1f-BSQtXopMsc`, `authDomain: gov-fix.firebaseapp.com`).
+     - Updated `.env` with Firebase Web client configuration variables while keeping files gitignored.
+  2. Backend Token Verification & Auth Services (`src/auth.py`):
+     - Enhanced `_init_firebase_admin()` to dynamically discover `*firebase-adminsdk*.json` and `gov-fix-*.json` service account files.
+     - Enhanced `verify_token_payload()` with multi-mode verification: Firebase Admin SDK `verify_id_token`, Google OAuth2 `verify_oauth2_token` (Google Identity Services), JWT fallback, and dev/test mock tokens.
+     - Enhanced `get_current_user` with automatic user resolution and synchronization against MongoDB Atlas (`get_user_from_mongodb`).
+  3. Google Sign-In & Citizen Provisioning Endpoints (`src/routes/auth.py`):
+     - Added `GET /api/v1/auth/config`: Exposes public Firebase web client credentials for frontend initialization.
+     - Added `POST /api/v1/auth/google` and alias `POST /api/v1/auth/google-signin`:
+       - Accepts ID token, email, and user name.
+       - If new citizen: auto-provisions `USR-CIT-xx` with `role='Citizen'`, `status='active'`, and `is_verified=1`, syncs to MongoDB Atlas, and dispatches a welcome email in the background.
+       - If existing user: links `firebase_uid`, ensures `is_verified=1`, syncs to MongoDB Atlas.
+       - Issues session cookie `govfix_token` (HTTP-accessible, Lax, 7 days).
+       - Automatically computes role-based destination redirect URL (`/citizen`, `/staff/triage`, `/staff/field`, `/staff/supervisor`, `/staff/audit`, `/admin`).
+     - Updated `citizen_signup` and `verify_email_confirm` to sync user data and verification status to MongoDB Atlas.
+  4. Frontend UI Templates (`src/templates/` & `frontend/templates/`):
+     - Updated `login.html`: Added styled "Sign in with Google (Citizen)" button with official Google multicolor SVG icon, divider, Firebase Web SDK (compat v9.22.0), dynamic config loader, and `signInWithGoogle()` popup flow with interactive fallback for offline demo environments.
+     - Updated `signup.html`: Added styled "Register with Google (Instant Verification)" button and `signUpWithGoogle()` handler that creates and verifies the citizen account in one click.
+  5. Automated Test Suite (`tests/test_google_auth.py`):
+     - Added 7 comprehensive automated tests covering auth config retrieval, new citizen auto-provisioning, session cookie generation, MongoDB syncing, existing citizen/staff role-based redirection, disabled account rejection (403), and token verification error handling.
+     - Maintained test isolation by cleanly restoring user status.
+     - Full test suite expanded to **147 automated tests passing (100% pass rate in 12.13s)**.
+
+Why it was done: To wire the downloaded Firebase service account JSON to live Google Authentication, provide Citizens with a one-click "Sign in with Google" and instant registration option, and ensure full synchronization with MongoDB Atlas without breaking existing functionality.
+
+
+Timestamp: 2026-10-11 19:37:30
+
+What was done: 
+- Comprehensively updated and modernized README.md to reflect the complete GovFix municipal grievance workflow system:
+  1. Executive summary, core architectural invariant, and problem statement context (VORTEXA 3.0, Problem Statement G-02).
+  2. Complete description of core system capabilities: 9-state deterministic workflow machine, 6-role RBAC, statutory SLAs with clock pause/resume, multi-level automatic escalation ladder (75%, 100%, 150%), tamper-evident SHA-256 hash-chained audit logging with trigger immutability, isolated dual-path AI advisory layer (Gemini + offline TF-IDF fallback), real Firebase Auth & Google Sign-In with instant citizen self-onboarding, segregated Citizen vs Staff portals, outbox-backed email notifications, and pluggable multi-database backends (SQLite, MongoDB Atlas, Cloud Firestore).
+  3. Complete directory structure tree detailing backend, frontend, scripts, and tests.
+  4. Step-by-step local setup, environment configuration, database seeding (SQLite, MongoDB, Firestore), and application execution instructions.
+  5. Pre-seeded demo credentials table covering all 8 accounts across 6 personas.
+  6. Automated testing guide covering all 147 test cases with individual test suite commands.
+  7. Exhaustive API endpoint reference table across workflow, audit, simulated clock, and authentication routes.
+  8. 5 step-by-step demonstration walkthrough scenarios tailored for hackathon judges (end-to-end lifecycle, refusal logging, SLA clock pausing during NEEDS_INFO, simulated clock fast-forwarding with multi-level escalation, and cryptographic audit verification).
+  9. Implementation deliverables roadmap index mapping Plans 01-06, Auth & Portals Rebuild, Master Plan Overview, and Solution Report.
+
+Why it was done: To bring the project documentation up to production standards and provide a comprehensive, clear, and checkable guide for users, developers, and hackathon evaluators.
+
+
+
+## Google Sign-In Popup Fix (Session: 2026-10-11)
+
+### Problem
+Clicking "Sign in with Google" showed a browser `prompt()` dialog asking for an email instead of the standard Google account picker popup. The `signInWithPopup` was failing silently (likely `auth/unauthorized-domain`) and falling through to a `prompt()` fallback.
+
+### Changes
+- **`src/templates/login.html`** + **`frontend/templates/login.html`**:
+  - Removed the entire `prompt()` fallback block (lines 369-383)
+  - Added `getGoogleAuthErrorMessage(error)` function that maps Firebase auth error codes to user-friendly messages
+  - `signInWithPopup` is now the only path — no fallback to `prompt()`
+  - If popup fails: user-cancelled → silent reset; `auth/unauthorized-domain` → tells user to add domain to Firebase Console; other errors → clear error message
+  - Follows the SPIN project pattern (`citizenFirebaseGoogleLogin` in `authService.ts`)
+
+- **`src/templates/signup.html`** + **`frontend/templates/signup.html`**:
+  - Same fix applied — removed `prompt()` fallback, added `getGoogleAuthErrorMessage()`, popup-only flow
+
+### Required Setup
+For the Google popup to work, the user must add `127.0.0.1` (or `localhost`) to:
+**Firebase Console → Authentication → Settings → Authorized Domains**
+
+
+## Fix for Firebase Config Endpoint (Session: 2026-10-11)
+- **Root Cause**: `src/main.py` and `src/routes/auth.py` did not invoke `load_dotenv()`, causing `GET /api/v1/auth/config` to return empty strings for `apiKey`, `appId`, etc. when the server process started before `.env` updates or in environments where `.env` wasn't loaded automatically. This triggered `"Firebase is not configured. Google Sign-In is unavailable."` on the frontend login card.
+- **Fix**: Added explicit `load_dotenv()` initialization to `src/main.py` and inside `get_auth_config()` in `src/routes/auth.py`.
+- **Verification**: Verified live endpoint `http://127.0.0.1:8000/api/v1/auth/config` now returns full credentials (`apiKey`, `projectId`, `authDomain`, `appId`, `messagingSenderId`). All 147 test cases continue to pass.
+
+
+Timestamp: 2026-10-11 19:51:40
+
+What was done: 
+- Created `requirements.txt` containing pinned dependencies for FastAPI, Uvicorn, Pydantic, Jinja2, scikit-learn, google-genai, pymongo, google-cloud-firestore, firebase-admin, and pytest.
+- Updated `README.md`:
+  1. Added `python -m pip install -r requirements.txt` to the Step 1 installation guide.
+  2. Updated Section 6 ("Running and Accessing the Application") with detailed tables covering public entry points (`/login`, `/signup`, `/docs`, `/dev/outbox`, `/health`) and direct role-based workspace portals (`/citizen`, `/staff/triage`, `/staff/field`, `/staff/supervisor`, `/staff/audit`, `/admin`).
+
+Why it was done: To address user request for a requirements file and explicit access guidelines in the README.
+
+
+## Demo Account Login Verification & Fix (Session: 2026-10-11)
+- **Database Status**: Confirmed all 8 demo accounts are seeded and synced across both SQLite (`users` table) and MongoDB (`users` collection):
+  - `citizen1@govfix.local` (`USR-CIT-01`, Citizen)
+  - `citizen2@govfix.local` (`USR-CIT-02`, Citizen)
+  - `triage@govfix.local` (`USR-OFF-01`, Officer / Triage Desk)
+  - `field1@govfix.local` (`USR-FLD-01`, Field Officer)
+  - `field2@govfix.local` (`USR-FLD-02`, Field Officer)
+  - `supervisor@govfix.local` (`USR-SUP-01`, Supervisor)
+  - `audit@govfix.local` (`USR-AUD-01`, Audit Inspector)
+  - `admin@govfix.local` (`USR-ADM-01`, Admin)
+  - Shared demo password: `GovFix2026!`
+- **Fix**: In `src/auth.py`, enhanced `verify_token_payload()` to unquote URL-encoded identifiers in dev/mock tokens (e.g. `mock-token-triage%40govfix.local` -> `triage@govfix.local`), allowing both form-based submission and 1-click Quick Demo buttons to authenticate seamlessly.
+- **Verification**: Verified live endpoint against all 8 accounts with 200 OK and proper role mapping. Full pytest test suite passing.
