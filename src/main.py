@@ -18,6 +18,9 @@ from src.database import connect, initialize_database
 from src.routes.requests import router as requests_router
 from src.routes.clock import router as clock_router
 from src.routes.ui import router as ui_router
+from src.routes.auth import router as auth_router
+from src.routes.admin import router as admin_router
+from src.routes.dev import router as dev_router
 from src.workflow import WorkflowError
 
 
@@ -50,6 +53,9 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 app.include_router(requests_router)
 app.include_router(clock_router)
+app.include_router(auth_router)
+app.include_router(admin_router)
+app.include_router(dev_router)
 app.include_router(ui_router)
 
 

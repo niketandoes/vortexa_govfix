@@ -89,6 +89,7 @@ def clear_schema(connection: sqlite3.Connection) -> None:
         DROP TABLE IF EXISTS ai_suggestions;
         DROP TABLE IF EXISTS requests;
         DROP TABLE IF EXISTS clock_state;
+        DROP TABLE IF EXISTS email_events;
         DROP TABLE IF EXISTS users;
         """
     )
@@ -104,31 +105,59 @@ def seed_extended_users(
             "USR-FLD-01",
             "Field Officer Vikram Singh",
             "Field Officer",
-            "vikram.singh@municipality.gov",
+            "field1@govfix.local",
             "Roads & Public Works",
             now_text,
+            "uid-field-1",
+            "active",
+            1,
         ),
         (
             "USR-FLD-02",
             "Field Officer Sunita Rao",
             "Field Officer",
-            "sunita.rao@municipality.gov",
+            "field2@govfix.local",
             "Sanitation & Streetlights",
             now_text,
+            "uid-field-2",
+            "active",
+            1,
         ),
         (
             "USR-AUD-01",
             "Audit Inspector Meera Joshi",
             "Audit Inspector",
-            "meera.joshi@audit.gov",
+            "audit@govfix.local",
             "Municipal Audit Commission",
             now_text,
+            "uid-audit-1",
+            "active",
+            1,
+        ),
+        (
+            "USR-ADM-01",
+            "Admin Administrator",
+            "Admin",
+            "admin@govfix.local",
+            "System Administration",
+            now_text,
+            "uid-admin-1",
+            "active",
+            1,
         ),
     )
     connection.executemany(
         """
-        INSERT OR IGNORE INTO users (id, name, role, email, department, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO users (id, name, role, email, department, created_at, firebase_uid, status, is_verified)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            role = excluded.role,
+            email = excluded.email,
+            department = excluded.department,
+            firebase_uid = excluded.firebase_uid,
+            status = excluded.status,
+            is_verified = excluded.is_verified
         """,
         extended,
     )
@@ -149,56 +178,109 @@ def seed_database(
 
     now_text = utc_iso(now)
     users = (
-        ("USR-CIT-01", "Ramesh Patel", "Citizen", "ramesh@citizen.local", None, now_text),
-        ("USR-CIT-02", "Priya Sharma", "Citizen", "priya@citizen.local", None, now_text),
+        ("USR-CIT-01", "Ramesh Patel", "Citizen", "citizen1@govfix.local", None, now_text, "uid-citizen-1", "active", 1),
+        ("USR-CIT-02", "Priya Sharma", "Citizen", "citizen2@govfix.local", None, now_text, "uid-citizen-2", "active", 1),
         (
             "USR-OFF-01",
             "Officer Anil Kumar",
             "Officer",
-            "anil.kumar@municipality.gov",
+            "triage@govfix.local",
             "Triage Desk / Public Works",
             now_text,
+            "uid-triage-1",
+            "active",
+            1,
         ),
         (
             "USR-FLD-01",
             "Field Officer Vikram Singh",
             "Field Officer",
-            "vikram.singh@municipality.gov",
+            "field1@govfix.local",
             "Roads & Public Works",
             now_text,
+            "uid-field-1",
+            "active",
+            1,
         ),
         (
             "USR-FLD-02",
             "Field Officer Sunita Rao",
             "Field Officer",
-            "sunita.rao@municipality.gov",
+            "field2@govfix.local",
             "Sanitation & Streetlights",
             now_text,
+            "uid-field-2",
+            "active",
+            1,
         ),
         (
             "USR-SUP-01",
             "Supervisor Rajesh Gupta",
             "Supervisor",
-            "rajesh.gupta@municipality.gov",
+            "supervisor@govfix.local",
             "Municipal Head",
             now_text,
+            "uid-supervisor-1",
+            "active",
+            1,
         ),
         (
             "USR-AUD-01",
             "Audit Inspector Meera Joshi",
             "Audit Inspector",
-            "meera.joshi@audit.gov",
+            "audit@govfix.local",
             "Municipal Audit Commission",
             now_text,
+            "uid-audit-1",
+            "active",
+            1,
         ),
     )
     connection.executemany(
         """
-        INSERT INTO users (id, name, role, email, department, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO users (id, name, role, email, department, created_at, firebase_uid, status, is_verified)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            role = excluded.role,
+            email = excluded.email,
+            department = excluded.department,
+            firebase_uid = excluded.firebase_uid,
+            status = excluded.status,
+            is_verified = excluded.is_verified
         """,
         users,
     )
+
+    if include_extended:
+        admin_user = (
+            (
+                "USR-ADM-01",
+                "Admin Administrator",
+                "Admin",
+                "admin@govfix.local",
+                "System Administration",
+                now_text,
+                "uid-admin-1",
+                "active",
+                1,
+            ),
+        )
+        connection.executemany(
+            """
+            INSERT INTO users (id, name, role, email, department, created_at, firebase_uid, status, is_verified)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name,
+                role = excluded.role,
+                email = excluded.email,
+                department = excluded.department,
+                firebase_uid = excluded.firebase_uid,
+                status = excluded.status,
+                is_verified = excluded.is_verified
+            """,
+            admin_user,
+        )
 
     requests = (
         (

@@ -3,11 +3,16 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL CHECK(length(trim(name)) > 0),
-    role TEXT NOT NULL CHECK(role IN ('Citizen', 'Officer', 'Field Officer', 'Supervisor', 'Audit Inspector')),
+    role TEXT NOT NULL CHECK(role IN ('Citizen', 'Officer', 'Field Officer', 'Supervisor', 'Audit Inspector', 'Admin')),
     email TEXT UNIQUE NOT NULL CHECK(length(trim(email)) > 0),
+    firebase_uid TEXT,
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'disabled')),
+    is_verified INTEGER NOT NULL DEFAULT 1 CHECK(is_verified IN (0, 1)),
     department TEXT,
     created_at TEXT NOT NULL
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_firebase_uid ON users(firebase_uid);
 
 CREATE TABLE IF NOT EXISTS requests (
     id TEXT PRIMARY KEY,
@@ -78,7 +83,7 @@ CREATE TABLE IF NOT EXISTS audit (
     timestamp TEXT NOT NULL,
     simulated_at TEXT,
     actor TEXT NOT NULL,
-    actor_role TEXT NOT NULL CHECK(actor_role IN ('Citizen', 'Officer', 'Field Officer', 'Supervisor', 'Audit Inspector', 'System')),
+    actor_role TEXT NOT NULL CHECK(actor_role IN ('Citizen', 'Officer', 'Field Officer', 'Supervisor', 'Audit Inspector', 'Admin', 'System')),
     action TEXT NOT NULL CHECK(length(trim(action)) > 0),
     request_id TEXT NOT NULL,
     from_state TEXT,
@@ -89,6 +94,17 @@ CREATE TABLE IF NOT EXISTS audit (
     dedupe_key TEXT UNIQUE,
     previous_hash TEXT NOT NULL CHECK(length(previous_hash) = 64),
     hash TEXT NOT NULL CHECK(length(hash) = 64)
+);
+
+CREATE TABLE IF NOT EXISTS email_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    recipient TEXT NOT NULL CHECK(length(trim(recipient)) > 0),
+    template TEXT NOT NULL CHECK(length(trim(template)) > 0),
+    event_id TEXT UNIQUE,
+    status TEXT NOT NULL CHECK(status IN ('sent', 'failed')),
+    error TEXT,
+    sent_at TEXT NOT NULL,
+    metadata_json TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(metadata_json))
 );
 
 CREATE TABLE IF NOT EXISTS clock_state (
@@ -102,6 +118,8 @@ CREATE TABLE IF NOT EXISTS clock_state (
         OR (is_frozen = 1 AND frozen_at IS NOT NULL)
     )
 );
+
+CREATE INDEX IF NOT EXISTS idx_email_events_event ON email_events(event_id);
 
 CREATE INDEX IF NOT EXISTS idx_requests_citizen ON requests(citizen_id);
 CREATE INDEX IF NOT EXISTS idx_requests_assignee ON requests(assigned_to);

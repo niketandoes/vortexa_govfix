@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verify Email &bull; GovFix Municipal Portal</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            color: #f8fafc;
+        }
+        .card {
+            background: #ffffff;
+            color: #0f172a;
+            width: 100%;
+            max-width: 500px;
+            border-radius: 12px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+            border: 1px solid #e2e8f0;
+            text-align: center;
+        }
+        .header {
+            background: #1e3a8a;
+            color: #ffffff;
+            padding: 28px 24px;
+            border-bottom: 4px solid #3b82f6;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 22px;
+            font-weight: 700;
+        }
+        .body {
+            padding: 32px 28px;
+        }
+        .icon-circle {
+            width: 64px;
+            height: 64px;
+            background: #dbeafe;
+            color: #1d4ed8;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            margin: 0 auto 20px;
+        }
+        .desc {
+            font-size: 15px;
+            color: #475569;
+            line-height: 1.6;
+            margin-bottom: 24px;
+        }
+        .email-highlight {
+            font-weight: 600;
+            color: #0f172a;
+            background: #f1f5f9;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .btn-action {
+            display: inline-block;
+            background: #2563eb;
+            color: #ffffff;
+            padding: 12px 24px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 14px;
+            border: none;
+            cursor: pointer;
+            margin-bottom: 12px;
+        }
+        .btn-action:hover {
+            background: #1d4ed8;
+        }
+        .outbox-box {
+            background: #f8fafc;
+            border: 1px dashed #cbd5e1;
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 24px;
+            font-size: 13px;
+            color: #64748b;
+        }
+        .outbox-box a {
+            color: #2563eb;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="header">
+            <h1>Email Verification Sent</h1>
+        </div>
+        <div class="body">
+            <div class="icon-circle">✉️</div>
+            <p class="desc">
+                We have dispatched a verification email to <span class="email-highlight" id="user-email">{{ email or "your email address" }}</span>.
+                Please check your inbox and click the verification link to activate grievance filing capabilities.
+            </p>
+
+            <button type="button" class="btn-action" id="btn-verify-now">
+                ⚡ Simulate Clicking Verification Link (Demo)
+            </button>
+
+            <div class="outbox-box">
+                <strong>Offline Local Demo:</strong> Since this environment uses the Local Outbox Provider, all outgoing emails are captured on disk. You can view the actual email file in the <a href="/dev/outbox" target="_blank">Developer Outbox (/dev/outbox)</a>.
+            </div>
+
+            <p style="margin-top: 24px; font-size: 13px;">
+                <a href="/login" style="color: #64748b; text-decoration: none;">&larr; Return to Sign In</a>
+            </p>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById("btn-verify-now").addEventListener("click", async () => {
+            const email = document.getElementById("user-email").textContent.trim();
+            const btn = document.getElementById("btn-verify-now");
+            btn.disabled = true;
+            btn.textContent = "Verifying Account...";
+
+            try {
+                const resp = await fetch("/api/v1/auth/verify-email", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ email: email })
+                });
+
+                if (!resp.ok) {
+                    throw new Error("Verification failed.");
+                }
+
+                alert("Email verified successfully! You can now sign in and lodge complaints.");
+                window.location.href = "/login";
+            } catch (err) {
+                btn.disabled = false;
+                btn.textContent = "⚡ Simulate Clicking Verification Link (Demo)";
+                alert(err.message || "Failed to verify email.");
+            }
+        });
+    </script>
+</body>
+</html>

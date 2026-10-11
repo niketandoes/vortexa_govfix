@@ -21,6 +21,19 @@ def configured_database_path() -> Path:
     return Path(configured).expanduser() if configured else DEFAULT_DATABASE_PATH
 
 
+def get_database_backend() -> str:
+    """Return active database backend ('sqlite' or 'firestore')."""
+    if os.getenv("GOVFIX_TEST_AUTH_OVERRIDE") == "1" and os.getenv("DATABASE_BACKEND") != "firestore":
+        return "sqlite"
+    return os.getenv("DATABASE_BACKEND", "sqlite").lower()
+
+
+def is_firestore_enabled() -> bool:
+    """Return True if Cloud Firestore backend or synchronization is active."""
+    from src.firestore_db import is_firestore_enabled as _fe
+    return _fe()
+
+
 def connect(database_path: str | Path | None = None) -> sqlite3.Connection:
     """Open a configured SQLite connection with GovFix safety pragmas."""
 
@@ -42,9 +55,34 @@ def connect(database_path: str | Path | None = None) -> sqlite3.Connection:
 
 
 def initialize_database(connection: sqlite3.Connection) -> None:
-    """Create all Plan 1 tables, indexes, and triggers."""
+    """Create all tables, indexes, triggers, and migrate existing tables."""
 
     connection.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+    
+    # Ensure users table columns exist for existing databases
+    existing_cols = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(users)").fetchall()
+    }
+    if "firebase_uid" not in existing_cols:
+        try:
+            connection.execute("ALTER TABLE users ADD COLUMN firebase_uid TEXT")
+            connection.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_firebase_uid ON users(firebase_uid)"
+            )
+        except sqlite3.OperationalError:
+            pass
+    if "status" not in existing_cols:
+        try:
+            connection.execute("ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
+        except sqlite3.OperationalError:
+            pass
+    if "is_verified" not in existing_cols:
+        try:
+            connection.execute("ALTER TABLE users ADD COLUMN is_verified INTEGER NOT NULL DEFAULT 1")
+        except sqlite3.OperationalError:
+            pass
+
     connection.commit()
 
 

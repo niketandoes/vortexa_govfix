@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ page_title }}</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <style>
+        :root {
+            --sidebar-bg: #0f172a;
+            --sidebar-hover: #1e293b;
+            --sidebar-active: #3b82f6;
+            --main-bg: #f8fafc;
+            --border-color: #e2e8f0;
+        }
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--main-bg);
+            color: #1e293b;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .sidebar {
+            width: 260px;
+            background: var(--sidebar-bg);
+            color: #f8fafc;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            border-right: 1px solid #1e293b;
+        }
+        .sidebar-brand {
+            padding: 20px 24px;
+            background: #090d16;
+            border-bottom: 1px solid #1e293b;
+        }
+        .sidebar-brand h2 {
+            margin: 0;
+            font-size: 18px;
+            color: #ffffff;
+            font-weight: 700;
+        }
+        .sidebar-brand p {
+            margin: 4px 0 0;
+            font-size: 11px;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .sidebar-nav {
+            padding: 16px 12px;
+            flex: 1;
+            overflow-y: auto;
+        }
+        .nav-item {
+            display: flex;
+            align-items: center;
+            padding: 10px 14px;
+            border-radius: 6px;
+            color: #cbd5e1;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 4px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .nav-item:hover {
+            background: var(--sidebar-hover);
+            color: #ffffff;
+        }
+        .nav-item.active {
+            background: var(--sidebar-active);
+            color: #ffffff;
+            font-weight: 600;
+        }
+        .main-wrapper {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .topbar {
+            height: 60px;
+            background: #ffffff;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+        }
+        .topbar h3 {
+            margin: 0;
+            font-size: 17px;
+            color: #0f172a;
+        }
+        .avatar-menu {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+        }
+        .avatar-circle {
+            width: 36px;
+            height: 36px;
+            background: #1e3a8a;
+            color: #ffffff;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 14px;
+        }
+        .user-info {
+            text-align: right;
+        }
+        .user-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: #0f172a;
+        }
+        .user-role-badge {
+            display: inline-block;
+            background: #f1f5f9;
+            color: #475569;
+            font-size: 11px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        .dropdown-panel {
+            position: absolute;
+            right: 0;
+            top: 48px;
+            background: #ffffff;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            width: 180px;
+            display: none;
+            z-index: 100;
+            overflow: hidden;
+        }
+        .dropdown-panel a, .dropdown-panel button {
+            display: block;
+            width: 100%;
+            text-align: left;
+            padding: 10px 16px;
+            background: none;
+            border: none;
+            color: #334155;
+            font-size: 13px;
+            cursor: pointer;
+            text-decoration: none;
+            box-sizing: border-box;
+        }
+        .dropdown-panel button:hover, .dropdown-panel a:hover {
+            background: #f1f5f9;
+            color: #dc2626;
+        }
+        .content-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+        }
+        .card {
+            background: #ffffff;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+        }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 16px;
+            margin-bottom: 20px;
+        }
+        .card-header h2 {
+            margin: 0;
+            font-size: 18px;
+            color: #0f172a;
+        }
+        .btn-primary {
+            background: #2563eb;
+            color: #ffffff;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .btn-primary:hover {
+            background: #1d4ed8;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            text-align: left;
+        }
+        th {
+            background: #f8fafc;
+            padding: 10px 12px;
+            font-weight: 600;
+            color: #475569;
+            border-bottom: 1px solid var(--border-color);
+        }
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 9999px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .status-active { background: #dcfce7; color: #15803d; }
+        .status-disabled { background: #fee2e2; color: #b91c1c; }
+        .btn-sm {
+            padding: 4px 8px;
+            font-size: 11px;
+            border-radius: 4px;
+            border: 1px solid #cbd5e1;
+            background: #ffffff;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        .btn-sm:hover {
+            background: #f1f5f9;
+        }
+        .btn-danger {
+            color: #dc2626;
+            border-color: #fca5a5;
+        }
+        .btn-danger:hover {
+            background: #fee2e2;
+        }
+        .btn-success {
+            color: #16a34a;
+            border-color: #86efac;
+        }
+        .btn-success:hover {
+            background: #dcfce7;
+        }
+        .clock-deck {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 12px;
+            margin-top: 16px;
+        }
+        .btn-clock {
+            padding: 12px;
+            border-radius: 6px;
+            border: 1px solid #cbd5e1;
+            background: #ffffff;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .btn-clock:hover {
+            background: #f1f5f9;
+            border-color: #94a3b8;
+        }
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(15, 23, 42, 0.6);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal-box {
+            background: #ffffff;
+            border-radius: 8px;
+            width: 100%;
+            max-width: 500px;
+            padding: 24px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
+        }
+        .modal-box h3 {
+            margin-top: 0;
+            font-size: 18px;
+            color: #0f172a;
+        }
+        .form-group {
+            margin-bottom: 14px;
+        }
+        .form-group label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: #475569;
+            margin-bottom: 4px;
+        }
+        .form-control {
+            width: 100%;
+            padding: 8px 10px;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            font-size: 13px;
+            box-sizing: border-box;
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="sidebar-brand">
+            <h2>GovFix Administration</h2>
+            <p>System Console &bull; Internal Control</p>
+        </div>
+        <div class="sidebar-nav">
+            <div class="nav-item active" onclick="switchTab('users-section', this)">👥 User Management</div>
+            <div class="nav-item" onclick="switchTab('clock-section', this)">⏱️ Simulated Clock</div>
+            <div class="nav-item" onclick="switchTab('sla-section', this)">📜 SLA Configuration</div>
+            <a href="/dev/outbox" target="_blank" class="nav-item">📬 Local Outbox (/dev/outbox)</a>
+        </div>
+    </div>
+
+    <div class="main-wrapper">
+        <div class="topbar">
+            <h3>System Administrator Workspace</h3>
+            <div class="avatar-menu" onclick="toggleDropdown()">
+                <div class="user-info">
+                    <div class="user-name">{{ current_user.name if current_user else "Administrator" }}</div>
+                    <span class="user-role-badge">Admin</span>
+                </div>
+                <div class="avatar-circle">A</div>
+                <div id="user-dropdown" class="dropdown-panel">
+                    <button type="button" onclick="signOut()">Sign Out</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="content-area">
+            <!-- 1. Users Section -->
+            <div id="users-section" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Registered Platform Accounts</h2>
+                        <button type="button" class="btn-primary" onclick="openProvisionModal()">➕ Provision Staff Account</button>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Name</th>
+                                <th>Role</th>
+                                <th>Email</th>
+                                <th>Department</th>
+                                <th>Status</th>
+                                <th>Verified</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-table-body">
+                            <tr><td colspan="8" style="text-align: center; color: #94a3b8;">Loading accounts...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 2. Simulated Clock Section -->
+            <div id="clock-section" class="tab-content" style="display: none;">
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Simulated Municipal Clock Controller</h2>
+                        <span id="clock-status-tag" style="background: #e0f2fe; color: #0284c7; padding: 4px 10px; border-radius: 9999px; font-weight: 600; font-size: 12px;">ACTIVE</span>
+                    </div>
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+                        <div style="font-size: 13px; color: #64748b;">Simulated Current Timestamp (UTC):</div>
+                        <div id="clock-display" style="font-size: 24px; font-family: monospace; font-weight: 700; color: #0f172a; margin-top: 4px;">Loading...</div>
+                        <div id="clock-offset" style="font-size: 12px; color: #64748b; margin-top: 4px;">Offset: +0 seconds</div>
+                    </div>
+
+                    <div style="font-weight: 600; font-size: 14px; margin-bottom: 8px;">Fast-Forward Time (Triggers SLA Escalation Engine):</div>
+                    <div class="clock-deck">
+                        <button type="button" class="btn-clock" onclick="advanceClock(1)">+1 Hour</button>
+                        <button type="button" class="btn-clock" onclick="advanceClock(12)">+12 Hours</button>
+                        <button type="button" class="btn-clock" onclick="advanceClock(24)">+24 Hours</button>
+                        <button type="button" class="btn-clock" onclick="advanceClock(72)">+72 Hours</button>
+                        <button type="button" class="btn-clock" onclick="advanceClock(168)">+7 Days</button>
+                    </div>
+
+                    <div style="margin-top: 24px; display: flex; gap: 12px;">
+                        <button type="button" id="btn-freeze" class="btn-primary" style="background: #eab308; color: #000;" onclick="toggleFreeze()">Freeze Time</button>
+                        <button type="button" class="btn-primary" style="background: #dc2626;" onclick="resetClock()">Reset Clock to Real UTC</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. SLA Section -->
+            <div id="sla-section" class="tab-content" style="display: none;">
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Statutory Municipal SLA Guidelines</h2>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Grievance Category</th>
+                                <th>Statutory Resolution SLA</th>
+                                <th>At-Risk Threshold (75%)</th>
+                                <th>Level 1 Escalation (100%)</th>
+                                <th>Level 2 Critical Breach (150%)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Water Leak</strong></td>
+                                <td>24 Hours</td>
+                                <td>18 Hours</td>
+                                <td>24 Hours (Supervisor)</td>
+                                <td>36 Hours (Municipal Head)</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Garbage Collection</strong></td>
+                                <td>24 Hours</td>
+                                <td>18 Hours</td>
+                                <td>24 Hours (Supervisor)</td>
+                                <td>36 Hours (Municipal Head)</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Streetlight</strong></td>
+                                <td>48 Hours</td>
+                                <td>36 Hours</td>
+                                <td>48 Hours (Supervisor)</td>
+                                <td>72 Hours (Municipal Head)</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Pothole</strong></td>
+                                <td>72 Hours</td>
+                                <td>54 Hours</td>
+                                <td>72 Hours (Supervisor)</td>
+                                <td>108 Hours (Municipal Head)</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Uncategorised</strong></td>
+                                <td>72 Hours</td>
+                                <td>54 Hours</td>
+                                <td>72 Hours (Supervisor)</td>
+                                <td>108 Hours (Municipal Head)</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Provision Staff Modal -->
+    <div id="provision-modal" class="modal-overlay">
+        <div class="modal-box">
+            <h3>Provision Staff Account</h3>
+            <form id="provision-form">
+                <div class="form-group">
+                    <label for="staff-name">Staff Full Name</label>
+                    <input type="text" id="staff-name" class="form-control" required placeholder="e.g. Inspector Arvind Joshi">
+                </div>
+                <div class="form-group">
+                    <label for="staff-email">Official Email Address</label>
+                    <input type="email" id="staff-email" class="form-control" required placeholder="name@municipality.gov">
+                </div>
+                <div class="form-group">
+                    <label for="staff-role">Role</label>
+                    <select id="staff-role" class="form-control" required>
+                        <option value="Officer">Officer (Triage Desk)</option>
+                        <option value="Field Officer">Field Officer (Work Orders)</option>
+                        <option value="Supervisor">Supervisor (Head)</option>
+                        <option value="Audit Inspector">Audit Inspector (Read-Only)</option>
+                        <option value="Admin">Administrator (System)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="staff-dept">Department</label>
+                    <input type="text" id="staff-dept" class="form-control" placeholder="e.g. Roads &amp; Public Works">
+                </div>
+                <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;">
+                    <button type="button" class="btn-sm" onclick="closeProvisionModal()">Cancel</button>
+                    <button type="submit" id="btn-provision-submit" class="btn-primary">Provision &amp; Send Invitation</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+    <script>
+        let isClockFrozen = false;
+
+        function toggleDropdown() {
+            const el = document.getElementById("user-dropdown");
+            el.style.display = el.style.display === "block" ? "none" : "block";
+        }
+
+        async function signOut() {
+            localStorage.removeItem("govfix_token");
+            localStorage.removeItem("govfix_user");
+            try {
+                await fetch("/api/v1/auth/logout", { method: "POST" });
+            } catch (e) {}
+            window.location.href = "/login";
+        }
+
+        function switchTab(sectionId, navEl) {
+            document.querySelectorAll(".tab-content").forEach(el => el.style.display = "none");
+            document.getElementById(sectionId).style.display = "block";
+            document.querySelectorAll(".sidebar-nav .nav-item").forEach(el => el.classList.remove("active"));
+            navEl.classList.add("active");
+            if (sectionId === "clock-section") loadClockState();
+            if (sectionId === "users-section") loadUsers();
+        }
+
+        function openProvisionModal() {
+            document.getElementById("provision-modal").style.display = "flex";
+        }
+
+        function closeProvisionModal() {
+            document.getElementById("provision-modal").style.display = "none";
+        }
+
+        async function loadUsers() {
+            const tbody = document.getElementById("users-table-body");
+            try {
+                const token = localStorage.getItem("govfix_token") || "mock-token-admin@govfix.local";
+                const resp = await fetch("/api/v1/admin/users", {
+                    headers: {
+                        "Authorization": "Bearer " + token,
+                        "X-Actor-ID": "USR-ADM-01"
+                    }
+                });
+                const data = await resp.json();
+                if (!data.success) throw new Error(data.detail || "Failed to load users");
+
+                let html = "";
+                data.data.forEach(u => {
+                    const statusClass = u.status === "active" ? "status-active" : "status-disabled";
+                    const toggleAction = u.status === "active" ? "disabled" : "active";
+                    const btnClass = u.status === "active" ? "btn-danger" : "btn-success";
+                    const btnText = u.status === "active" ? "Disable" : "Enable";
+
+                    html += `
+                    <tr>
+                        <td style="font-family: monospace; font-weight: 600;">${u.id}</td>
+                        <td><strong>${u.name}</strong></td>
+                        <td><span style="background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-weight: 500;">${u.role}</span></td>
+                        <td>${u.email}</td>
+                        <td>${u.department || "-"}</td>
+                        <td><span class="status-badge ${statusClass}">${u.status.toUpperCase()}</span></td>
+                        <td>${u.is_verified ? "✅ Yes" : "⏳ Pending"}</td>
+                        <td>
+                            ${u.role !== "Admin" ? `<button class="btn-sm ${btnClass}" onclick="toggleUserStatus('${u.id}', '${toggleAction}')">${btnText}</button>` : `<span style="color: #94a3b8; font-size: 11px;">Protected</span>`}
+                        </td>
+                    </tr>
+                    `;
+                });
+                tbody.innerHTML = html;
+            } catch (err) {
+                tbody.innerHTML = `<tr><td colspan="8" style="color: #dc2626;">Error: ${err.message}</td></tr>`;
+            }
+        }
+
+        async function toggleUserStatus(userId, newStatus) {
+            const token = localStorage.getItem("govfix_token") || "mock-token-admin@govfix.local";
+            try {
+                const resp = await fetch(`/api/v1/admin/users/${userId}/status`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": "Bearer " + token,
+                        "X-Actor-ID": "USR-ADM-01"
+                    },
+                    body: JSON.stringify({ status: newStatus })
+                });
+                if (!resp.ok) throw new Error("Failed to change user status");
+                loadUsers();
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        document.getElementById("provision-form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById("btn-provision-submit");
+            btn.disabled = true;
+            btn.textContent = "Provisioning...";
+
+            const payload = {
+                name: document.getElementById("staff-name").value.trim(),
+                email: document.getElementById("staff-email").value.trim(),
+                role: document.getElementById("staff-role").value,
+                department: document.getElementById("staff-dept").value.trim() || null
+            };
+
+            const token = localStorage.getItem("govfix_token") || "mock-token-admin@govfix.local";
+            try {
+                const resp = await fetch("/api/v1/admin/users", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": "Bearer " + token,
+                        "X-Actor-ID": "USR-ADM-01"
+                    },
+                    body: JSON.stringify(payload)
+                });
+                const data = await resp.json();
+                if (!resp.ok || !data.success) throw new Error(data.detail || "Provisioning failed");
+
+                alert(`Staff account ${data.data.id} created! Invitation email sent.`);
+                closeProvisionModal();
+                loadUsers();
+            } catch (err) {
+                alert(err.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = "Provision & Send Invitation";
+            }
+        });
+
+        async function loadClockState() {
+            try {
+                const resp = await fetch("/api/v1/clock");
+                const data = await resp.json();
+                document.getElementById("clock-display").textContent = data.current_simulated_time;
+                document.getElementById("clock-offset").textContent = `Offset: +${data.offset_seconds} seconds`;
+                isClockFrozen = data.is_frozen;
+
+                const tag = document.getElementById("clock-status-tag");
+                const freezeBtn = document.getElementById("btn-freeze");
+                if (data.is_frozen) {
+                    tag.textContent = "FROZEN";
+                    tag.style.background = "#fef3c7";
+                    tag.style.color = "#b45309";
+                    freezeBtn.textContent = "Resume Time Progression";
+                    freezeBtn.style.background = "#16a34a";
+                    freezeBtn.style.color = "#ffffff";
+                } else {
+                    tag.textContent = "RUNNING";
+                    tag.style.background = "#e0f2fe";
+                    tag.style.color = "#0284c7";
+                    freezeBtn.textContent = "Freeze Simulated Time";
+                    freezeBtn.style.background = "#eab308";
+                    freezeBtn.style.color = "#000000";
+                }
+            } catch (e) {
+                console.error("Failed to load clock:", e);
+            }
+        }
+
+        async function advanceClock(hours) {
+            const token = localStorage.getItem("govfix_token") || "mock-token-admin@govfix.local";
+            try {
+                const resp = await fetch("/api/v1/clock/advance", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": "Bearer " + token,
+                        "X-Actor-ID": "USR-ADM-01"
+                    },
+                    body: JSON.stringify({ hours: hours, minutes: 0 })
+                });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.detail || "Advance failed");
+                if (data.escalations_triggered && data.escalations_triggered.length > 0) {
+                    alert(`Clock advanced by ${hours}h. ${data.escalations_triggered.length} SLA escalation(s) triggered and emailed!`);
+                }
+                loadClockState();
+            } catch (e) {
+                alert(e.message);
+            }
+        }
+
+        async function toggleFreeze() {
+            const token = localStorage.getItem("govfix_token") || "mock-token-admin@govfix.local";
+            const endpoint = isClockFrozen ? "/api/v1/clock/unfreeze" : "/api/v1/clock/freeze";
+            try {
+                await fetch(endpoint, {
+                    method: "POST",
+                    headers: {
+                        "Authorization": "Bearer " + token,
+                        "X-Actor-ID": "USR-ADM-01"
+                    }
+                });
+                loadClockState();
+            } catch (e) {
+                alert(e.message);
+            }
+        }
+
+        async function resetClock() {
+            if (!confirm("Reset clock back to real UTC time?")) return;
+            const token = localStorage.getItem("govfix_token") || "mock-token-admin@govfix.local";
+            try {
+                await fetch("/api/v1/clock/reset", {
+                    method: "POST",
+                    headers: {
+                        "Authorization": "Bearer " + token,
+                        "X-Actor-ID": "USR-ADM-01"
+                    }
+                });
+                loadClockState();
+            } catch (e) {
+                alert(e.message);
+            }
+        }
+
+        // Initialize on page load
+        loadUsers();
+    </script>
+</body>
+</html>

@@ -206,7 +206,52 @@ class EscalationService:
                                 "new_level": target_level,
                                 "elapsed_ratio": round(ratio, 2),
                                 "recipient": recipient,
+                                "sla_cycle": sla_cycle,
                             })
+
+            # Post-commit async email notifications for escalated grievances
+            for esc in escalated_records:
+                req_id = esc["request_id"]
+                lvl = esc["new_level"]
+                cycle = esc.get("sla_cycle", 1)
+                event_id = f"escalate-{req_id}-c{cycle}-lvl-{lvl}"
+
+                try:
+                    req_row = conn.execute(
+                        "SELECT title, location, category, deadline FROM requests WHERE id = ?",
+                        (req_id,),
+                    ).fetchone()
+                    sup = conn.execute(
+                        "SELECT name, email FROM users WHERE id = ?",
+                        (esc["recipient"],),
+                    ).fetchone()
+                    if not sup:
+                        sup = conn.execute(
+                            "SELECT name, email FROM users WHERE role = 'Supervisor' LIMIT 1"
+                        ).fetchone()
+
+                    sup_email = sup["email"] if sup else "supervisor@govfix.local"
+                    sup_name = sup["name"] if sup else "Supervisor"
+                    template = "escalation_level_2" if lvl == 2 else "escalation_level_1"
+
+                    from src.services.email_service import dispatch_email_sync
+
+                    dispatch_email_sync(
+                        recipient=sup_email,
+                        template=template,
+                        context={
+                            "name": sup_name,
+                            "request_id": req_id,
+                            "title": req_row["title"] if req_row else "",
+                            "location": req_row["location"] if req_row else "",
+                            "category": req_row["category"] if req_row else "",
+                            "deadline": req_row["deadline"] if req_row else "",
+                        },
+                        event_id=event_id,
+                    )
+                except Exception:
+                    # Email dispatch failure must never roll back or alter workflow state
+                    pass
         finally:
             if self._shared_connection is None:
                 conn.close()

@@ -175,3 +175,157 @@ What was done:
      - Executed full test suite: 110/110 tests passing across entire repository (100% pass rate).
 
 Why it was done: Fixed all backend connection disconnects, missing API helpers, modal workflows, column mappings, and data unpacking bugs strictly for Plan 03 deliverables, connecting all five workspaces with backend routes and passing 100% of integration tests.
+
+
+Timestamp: 2026-10-11 17:30:00
+
+What was done: 
+- Conducted exhaustive verification audit of entire GovFix project completion across all five plans (`plan-01.md` through `plan-05.md`):
+  1. Plan 01 (Foundation & Data Architecture): Verified SQLite WAL mode, foreign keys, 5 database roles, 9 states, 5 categories & SLA mappings, 2h triage deadline, audit table update/delete abort triggers, field officer assignment triggers, and deterministic seed data (7 users, 6 requests) with valid SHA-256 hash chains.
+  2. Plan 02 (Core Workflow Engine, Role Checks & Refusal Logging): Verified 13 transitions, 5-step validation pipeline, atomic transactions, refusal logging, version conflict handling (409), 7-day closed reopen boundary, citizen rejection appeal submission & supervisor approval, resolution evidence requirement, and server-enforced read scopes.
+  3. Plan 03 (Interface & Role-Based Workspaces): Verified 5 multi-page workspaces (`/citizen`, `/officer`, `/field-officer`, `/supervisor`, `/audit`), live AI preview, intake queue, work orders, appeal & progress modals, simulated clock controls, audit log filters & cryptographic chain verification, and verified end-to-end backend connections.
+  4. Plan 04 (AI Advisory Layer & Structural Boundary): Verified AST structural firewall (zero workflow imports), narrow suggestion repository capability, dual-path Gemini + offline scikit-learn fallback trained on 100 Indian municipal complaints, and human confirmation requirement.
+  5. Plan 05 (Simulated Clock, SLA Deadline & Escalation Engine): Verified thread-safe ClockService with RLock, clock pausing during `NEEDS_INFO` extending resolution & triage deadlines, idempotent multi-level escalation ladder (75% At-Risk, 100% Level 1, 150% Level 2), deduplication keys, and cycle resets on reopen.
+  6. Automated Test Suite: Verified all 110 automated tests pass with 100% pass rate across 9 test modules (`test_foundation.py`, `test_workflow.py`, `test_ui.py`, `test_citizen_portal.py`, `test_officer_workspace.py`, `test_plan_03_backend_connection.py`, `test_ai_boundary.py`, `test_escalation.py`, `test_phase1_5_gaps.py`).
+  7. Compiled full audit report artifact at `project_completion_audit_plans_01_05.md`.
+
+Why it was done: To provide an authoritative, checkable verification audit on project completion against the specifications of Plans 01 through 05 as requested by the user.
+
+
+Timestamp: 2026-10-11 18:15:00
+
+What was done: 
+- Commenced complete Rebuild of GovFix's access model, authentication, portals, and notifications:
+  1. Inspected codebase and analyzed reference SPIN project at `C:\Users\niket\Documents\Hackathon-106\Google-Code-For-Communities-`.
+  2. Drafted master implementation plan `implementation_plan_auth_portals.md` detailing:
+     - Firebase Authentication integration with emulator fallback and database-authoritative role verification.
+     - Database schema extensions: `users` table (`firebase_uid`, `status`, `is_verified`, `Admin` role) and dedicated `email_events` table with idempotency keys.
+     - Complete elimination of role-switchers, impersonation headers, and shared navigation.
+     - Strict server-side ownership scoping: citizens see only their own complaints and computed stats; internal staff IDs never exposed in citizen responses.
+     - Completely segregated frontends: friendly light-themed `/citizen` portal and dense dark/neutral `/staff/...` workspaces with server-enforced route guards.
+     - Outbox-backed email notification system with LocalOutboxProvider and dev outbox viewer (`/dev/outbox`).
+     - Backwards compatibility test override flag (`GOVFIX_TEST_AUTH_OVERRIDE=1`) to preserve all existing tests.
+     - Full suite of new security, RBAC, isolation, and journey tests.
+
+Why it was done: To systematically execute the access model and portal rebuild according to the authoritative task specifications while safeguarding existing test baselines.
+
+Timestamp: 2026-10-11 18:45:00
+
+What was done: 
+- Completed full Access Model, Auth Portals, Outbox, and Cloud Firestore Rebuild:
+  1. Citizen Portal & Staff Workspace UI Redesign:
+     - Segregated Citizen and Staff layouts cleanly in `src/templates/base.html` and `frontend/templates/base.html`: light-themed citizen header with mobile navigation; dark/neutral `#0f172a` staff console with dense work-focused sidebar.
+     - Completely removed the demo role-switcher dropdown (`#header-persona-select`) from all pages.
+     - Completely removed staff navigation links and simulated clock display from the Citizen portal.
+     - Added user avatar menus with display names, role badges, and functional Sign Out buttons (`GovFix.signOut()`).
+     - Added Email & Notification Preferences modal (`#preferences-modal`) in `citizen.html` and wired preferences management.
+     - Enforced assigned field officer privacy: citizen views and card details now show friendly display names and team labels, never exposing raw internal `USR-FLD-xx` identifiers.
+     - Connected citizen metrics bar to the authoritative `GET /api/v1/citizen/stats` endpoint.
+     - Preserved all required test DOM hooks (`<meta name="default-actor-id">`, `data-actor-id`, `#requests-items`, `#page-heading`, etc.).
+  2. Cloud Firestore Database Integration & Dual-Database Backend:
+     - Implemented `src/firestore_db.py` supporting pluggable backend configuration via `DATABASE_BACKEND` (`sqlite` or `firestore`).
+     - Configured Firestore client to read credentials from `GOOGLE_APPLICATION_CREDENTIALS`, `FIREBASE_CREDENTIALS_PATH`, `FIREBASE_PROJECT_ID`, or `FIRESTORE_EMULATOR_HOST`, falling back to `AnonymousCredentials` for local development.
+     - Mapped all six core collections: `users`, `requests`, `audit`, `ai_suggestions`, `clock_state`, and `email_events`.
+     - Created seeding and synchronization script `scripts/seed_firestore.py` to populate collections from the authoritative database with full summary output.
+     - Updated `src/auth.py` to query user profiles from Cloud Firestore when available and synchronize with local storage.
+     - Updated `src/routes/auth.py` and `src/routes/admin.py` to synchronize user creation and status modifications to Firestore.
+     - Updated `src/database.py` to export `get_database_backend` and `is_firestore_enabled`.
+  3. Client Utilities & Authentication:
+     - Updated `src/static/app.js` and `frontend/static/app.js` to automatically attach Bearer tokens from localStorage in `GovFix.apiRequest()`, while preserving `X-Actor-ID` injection for legacy tests.
+     - Exported `GovFix.signOut()` and `GovFix.getCitizenStats()`.
+  4. Testing & Verification:
+     - Created `tests/test_auth_and_portals.py` with 15 comprehensive automated tests verifying:
+       - 401 on unauthenticated requests without test override.
+       - 401 on tampered/forged Bearer tokens.
+       - Token verification and profile lookup.
+       - 403 on disabled accounts.
+       - 403 when Citizen tokens attempt Officer triage.
+       - 403 when Field Officer tokens attempt triage.
+       - 403 when Audit Inspector attempts workflow mutations (while 200 on audit verify).
+       - 403 when Administrator attempts workflow transitions.
+       - Strict data scoping isolation between Citizen 1 and Citizen 2.
+       - Internal `USR-FLD-xx` privacy masking in citizen responses.
+       - Dev outbox page and JSON endpoint inspection.
+       - Outbox email dispatch and idempotency deduplication.
+       - Firestore collection constants and pluggable `DATABASE_BACKEND` configuration.
+       - Staff provisioning with `USR-FLD-` allocation and invitation email.
+     - Executed full pytest test suite: **132/132 tests passing (100% pass rate)**.
+     - Retained all changes in working directory without git commit per instructions.
+
+Why it was done: Successfully implemented all requirements for real Firebase authentication, segregated citizen and staff portals, customized email notifications, and dual Cloud Firestore integration while ensuring 100% test pass rate across the full test suite.
+
+
+Timestamp: 2026-10-11 18:55:00
+
+What was done: 
+- Conducted exhaustive adversarial review and resolved uncovered functional bugs and edge case disconnects:
+  1. `src/routes/ui.py`:
+     - Fixed critical infinite redirect loop bug when non-citizen roles (Field Officer, Supervisor, Audit Inspector, Admin) visited `/citizen`. Previously, `enforce_page_role` was given static `redirect_target="/staff/triage"`, and `/staff/triage` gave `redirect_target="/citizen"`, ping-ponging the browser endlessly. Updated `enforce_page_role` to dynamically and strictly redirect users to their own authoritative role portal.
+  2. `src/routes/requests.py` & `src/templates/citizen.html`:
+     - Fixed overview metrics key mismatch bug in `GET /api/v1/citizen/stats` and `CitizenPortal.updateStatsBar`. The endpoint previously only returned `total_complaints`, `active_complaints`, `resolved_complaints`, `rejected_complaints`, while the UI looked for `total`, `in_progress`, `action_needed`, `resolved_closed`. Enhanced the backend to compute and provide both sets of attributes (`total`, `active`, `in_progress`, `action_needed`, `resolved`, `rejected`), and updated the UI to safely fall back, eliminating `undefined` counters in the citizen stats bar.
+  3. `src/templates/citizen.html` & `frontend/templates/citizen.html`:
+     - Marked the `location` field as `required` with `minlength="3"` and red asterisk `<span class="text-red-500">*</span>` in the grievance submission form, enforcing the requirement from the specification.
+     - Fixed "Reopen Case" logic on CLOSED requests. Previously checked client wall-clock `new Date()` within 7 days. Updated `CitizenPortal.isWithinReopenWindow` to evaluate server-authoritative `req.permitted_actions.includes("TRANSITION:REOPENED")`, ensuring UI and server state machine strictly agree and preventing reopen button from appearing after the 7-day statutory window expires.
+  4. `src/services/escalation_service.py` & `src/routes/clock.py`:
+     - Fixed missing escalation email alerts in `evaluate_and_escalate_all`. Added post-commit asynchronous dispatch of `escalation_level_1` and `escalation_level_2` emails to the municipal Supervisor using idempotent event key `f"escalate-{req_id}-c{sla_cycle}-lvl-{lvl}"`. Removed redundant/conflicting dispatch in `clock.py`.
+  5. `src/workflow.py`:
+     - Hardened data privacy in `_serialize_request` and `get_request_history`. Even if the assigned field officer user row is absent or unresolvable, the engine falls back to `"Field Operations Officer"` and `"Municipal Field Operations"` rather than leaking raw internal `USR-FLD-xx` strings to citizens.
+  6. `src/firestore_db.py`:
+     - Implemented `save_clock_state_to_firestore(clock_data)` and added `clock_state` document synchronization to `sync_sqlite_to_firestore`. Aligned default fallback `FIREBASE_PROJECT_ID` with `"govfix-demo"`.
+  7. `src/static/app.js` & `frontend/static/app.js`:
+     - Added session expiry handling in `GovFix.apiRequest()`: on HTTP 401 unauthorized responses, clears token from `localStorage` and redirects browser to `/login?next=...`.
+  8. `src/templates/base.html` & `frontend/templates/base.html`:
+     - Cleaned up citizen header user chip by hiding raw internal `USR-CIT-01` identifier from visible layout while preserving the `data-actor-id` attribute on a hidden node for test suite compatibility, resolving chip clipping and visual overlap.
+  9. `tests/test_auth_and_portals.py`:
+     - Added 4 new automated integration tests:
+       - `test_citizen_stats_endpoint_structure`: verifies all metric counters and aliases.
+       - `test_escalation_evaluator_email_dispatch_and_idempotency`: verifies escalation email delivery and zero duplicate delivery upon re-evaluation.
+       - `test_multi_role_portal_redirects_no_infinite_loop`: verifies single-hop redirection to authoritative portal without ping-pong loops.
+       - `test_closed_reopen_permitted_actions_server_authority`: verifies 7-day reopen boundary governed strictly by server `permitted_actions`.
+     - Full test suite expanded to 136 automated tests.
+
+Why it was done: Eliminated infinite redirect loops, aligned citizen metrics between UI and API, enforced server authority on closed case actions, activated escalation email dispatch with strict idempotency, and safeguarded user privacy.
+
+Timestamp: 2026-10-11 19:03:00
+
+What was done: 
+- Hardened Email Notification Engine, Account Provisioning, and Test Isolation:
+  1. `src/services/email_service.py`:
+     - Added dedicated branded email templates for `reassignment` (notifying newly assigned field officer with location, category, and statutory SLA deadline) and `needs_info` (notifying citizen of required details with SLA timer pause notification).
+  2. `src/routes/requests.py`:
+     - Updated `reassign_request` to dispatch `template="reassignment"` to the newly assigned field officer with case details.
+     - Updated `transition_request` when transitioning to `ACKNOWLEDGED` with an approved appeal (`appeal_approval_note`) to dispatch `template="appeal_decision"` to the citizen instead of generic acknowledgment.
+     - Added citizen email dispatch on `NEEDS_INFO` transitions with `template="needs_info"` and the officer's request note.
+  3. `src/routes/admin.py` & `src/routes/auth.py`:
+     - Hardened `create_staff_user` and `register_citizen` against `sqlite3.IntegrityError: UNIQUE constraint failed: users.firebase_uid` by verifying UID uniqueness before insert and appending a unique discriminator if mock UID generation collides.
+  4. `src/seed.py`:
+     - Added `DROP TABLE IF EXISTS email_events;` to `clear_schema` to guarantee clean database reset during re-seeding.
+  5. `tests/test_auth_and_portals.py`:
+     - Added `try/finally` cleanup in `test_admin_provision_staff_endpoint` to delete test-provisioned staff accounts and prevent persistent state pollution across test runs.
+     - Added `test_reassignment_and_appeal_decision_email_dispatch` verifying reassignment email delivery and recipient resolution.
+     - Full test suite expanded to **137 automated tests passing (100% pass rate)**.
+  6. Cleaned up untracked temporary database artifact `govfix.db` from repository root.
+
+Why it was done: To complete all email template specifications from the task requirements, prevent database constraint crashes in mock account provisioning, and ensure full test isolation and pristine test runs.
+
+
+Timestamp: 2026-10-11 19:08:00
+
+What was done: 
+- Implemented MongoDB Atlas Migration and Integration per user credentials:
+  1. Installed `pymongo[srv]` and `dnspython` for MongoDB Atlas SRV connection string support.
+  2. Implemented `src/mongodb.py`:
+     - Configured MongoDB client using `MONGODB_URI` / credentials (`user: niketoke101_db_user`, `password: DuOjSO09GUNCb6G1`, `database: gov-fix`).
+     - Established collections mapping: `users`, `requests`, `audit`, `ai_suggestions`, `clock_state`, and `email_events`.
+     - Added index creation for unique constraints (`id`, `email`, `firebase_uid`, `dedupe_key`, `event_id`).
+     - Added `purge_mongodb_data` to remove old data from MongoDB collections per the user directive.
+  3. Created `scripts/migrate_to_mongodb.py`:
+     - Command-line migration and seeding utility connecting to MongoDB Atlas.
+     - Automatically purges old data across all collections.
+     - Seeds all clean canonical users, requests, SHA-256 hash-chained audit blocks, and simulated clock state.
+     - Supports `--purge-sqlite` flag to remove old local SQLite files.
+  4. Added `tests/test_mongodb.py`:
+     - Added 3 automated tests verifying URI resolution, configuration flags, and collection CRUD/purge operations.
+     - Full test suite expanded to **140 automated tests passing (100% pass rate in 25.67s)**.
+
+Why it was done: To execute migration to MongoDB Atlas with the provided credentials (`niketoke101_db_user`), purge old data, and enable cloud MongoDB persistence across all entities while maintaining full test coverage.

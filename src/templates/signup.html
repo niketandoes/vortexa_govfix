@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Citizen Registration &bull; GovFix Municipal Portal</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            color: #f8fafc;
+        }
+        .signup-card {
+            background: #ffffff;
+            color: #0f172a;
+            width: 100%;
+            max-width: 460px;
+            border-radius: 12px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+            border: 1px solid #e2e8f0;
+        }
+        .signup-header {
+            background: #1e3a8a;
+            color: #ffffff;
+            padding: 28px 24px 24px;
+            text-align: center;
+            border-bottom: 4px solid #3b82f6;
+        }
+        .signup-header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 700;
+        }
+        .signup-header p {
+            margin: 6px 0 0;
+            font-size: 13px;
+            color: #bfdbfe;
+        }
+        .signup-body {
+            padding: 28px 24px 24px;
+        }
+        .form-group {
+            margin-bottom: 18px;
+        }
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 6px;
+            color: #334155;
+        }
+        .form-control {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            font-size: 14px;
+            box-sizing: border-box;
+            transition: border-color 0.15s ease;
+        }
+        .form-control:focus {
+            border-color: #2563eb;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+        }
+        .btn-submit {
+            width: 100%;
+            background: #2563eb;
+            color: #ffffff;
+            border: none;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s ease;
+        }
+        .btn-submit:hover {
+            background: #1d4ed8;
+        }
+        .links-row {
+            text-align: center;
+            margin-top: 18px;
+            font-size: 13px;
+            color: #64748b;
+        }
+        .links-row a {
+            color: #2563eb;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        .links-row a:hover {
+            text-decoration: underline;
+        }
+        .alert-error {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #f87171;
+            padding: 10px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            margin-bottom: 16px;
+            display: none;
+        }
+        .notice-box {
+            background: #eff6ff;
+            border-left: 4px solid #3b82f6;
+            padding: 10px 12px;
+            font-size: 12px;
+            color: #1e40af;
+            margin-bottom: 18px;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="signup-card">
+        <div class="signup-header">
+            <h1>Citizen Self-Service Registration</h1>
+            <p>GovFix Municipal Grievance Redressal System</p>
+        </div>
+        <div class="signup-body">
+            <div id="alert-error" class="alert-error"></div>
+
+            <div class="notice-box">
+                <strong>Email Verification Required:</strong> After submitting this form, a verification link will be sent to your email. You must verify your address before filing complaints.
+            </div>
+
+            <form id="signup-form">
+                <div class="form-group">
+                    <label for="name">Full Name</label>
+                    <input type="text" id="name" class="form-control" placeholder="e.g. Anand Deshmukh" required autocomplete="name">
+                </div>
+                <div class="form-group">
+                    <label for="email">Email Address</label>
+                    <input type="email" id="email" class="form-control" placeholder="anand@example.com" required autocomplete="email">
+                </div>
+                <div class="form-group">
+                    <label for="password">Password (minimum 6 characters)</label>
+                    <input type="password" id="password" class="form-control" minlength="6" placeholder="Choose a secure password" required autocomplete="new-password">
+                </div>
+                <div class="form-group">
+                    <label for="confirm_password">Confirm Password</label>
+                    <input type="password" id="confirm_password" class="form-control" minlength="6" placeholder="Repeat your password" required autocomplete="new-password">
+                </div>
+                <button type="submit" id="btn-submit" class="btn-submit">Create Citizen Account</button>
+            </form>
+
+            <div class="links-row">
+                Already registered? <a href="/login">Sign in here &rarr;</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showError(msg) {
+            const el = document.getElementById("alert-error");
+            el.textContent = msg;
+            el.style.display = "block";
+        }
+
+        document.getElementById("signup-form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            document.getElementById("alert-error").style.display = "none";
+
+            const name = document.getElementById("name").value.trim();
+            const email = document.getElementById("email").value.trim();
+            const password = document.getElementById("password").value;
+            const confirm = document.getElementById("confirm_password").value;
+
+            if (password !== confirm) {
+                showError("Passwords do not match. Please re-enter.");
+                return;
+            }
+
+            const btn = document.getElementById("btn-submit");
+            btn.disabled = true;
+            btn.textContent = "Creating Account...";
+
+            try {
+                const resp = await fetch("/api/v1/auth/signup", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ name, email, password })
+                });
+
+                const data = await resp.json();
+                if (!resp.ok || !data.success) {
+                    throw new Error(data.detail || (data.error && data.error.message) || "Registration failed.");
+                }
+
+                window.location.href = "/verify-email?email=" + encodeURIComponent(email);
+            } catch (err) {
+                btn.disabled = false;
+                btn.textContent = "Create Citizen Account";
+                showError(err.message || "An unexpected error occurred during signup.");
+            }
+        });
+    </script>
+</body>
+</html>

@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="GovFix - Municipal Grievance Redressal and Workflow Management System">
+  <meta name="default-actor-id" content="{{ default_actor_id or 'USR-CIT-01' }}">
   <title>{{ page_title }} - GovFix Municipal Grievance</title>
   
   <!-- Tailwind CSS via CDN -->
@@ -31,12 +32,16 @@
   <link rel="stylesheet" href="/static/styles.css">
   {% block head_extra %}{% endblock %}
 </head>
-<body class="min-h-full flex flex-col font-sans text-slate-800 bg-slate-100/60 antialiased">
 
+{% if active_page == 'citizen' %}
+<!-- ============================================================================== -->
+<!-- Citizen Portal Layout (Light Theme, Mobile-First, Strictly Citizen Scope)       -->
+<!-- ============================================================================== -->
+<body class="min-h-full flex flex-col font-sans text-slate-800 bg-slate-100/60 antialiased">
   <!-- Tricolor Accent Banner -->
   <div class="gov-tricolor-strip w-full"></div>
 
-  <!-- Primary Government Navigation Bar -->
+  <!-- Citizen Top Navigation Bar (No Staff Links, No Role Switcher, No Clock) -->
   <header class="bg-slate-900 text-slate-100 border-b border-slate-800 shadow-md sticky top-0 z-40">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <div class="flex items-center justify-between h-16">
@@ -45,7 +50,6 @@
         <div class="flex items-center space-x-3">
           <a href="/citizen" class="flex items-center space-x-3 group">
             <div class="w-9 h-9 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-amber-400 group-hover:border-amber-500/50 transition">
-              <!-- Municipal Emblem SVG -->
               <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24">
                 <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
               </svg>
@@ -55,89 +59,56 @@
                 <span class="font-bold text-base tracking-tight text-white group-hover:text-amber-300 transition">GovFix</span>
                 <span class="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.2 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded">Civic Redress</span>
               </div>
-              <p class="text-[11px] text-slate-400 leading-none">Municipal Grievance Workflow System</p>
+              <p class="text-[11px] text-slate-400 leading-none">Citizen Grievance Redressal</p>
             </div>
           </a>
         </div>
 
-        <!-- Center: 5 Persistent Role Navigation Links (Full-Page Reloads) -->
-        <nav class="hidden md:flex items-center space-x-1" aria-label="Role Navigation">
-          <a href="/citizen"
-             class="px-3 py-2 rounded-md text-xs font-medium transition flex items-center space-x-1.5 {% if active_page == 'citizen' %}bg-slate-800 text-white font-semibold shadow-inner border-b-2 border-amber-400{% else %}text-slate-300 hover:text-white hover:bg-slate-800/60{% endif %}"
-             id="nav-citizen">
-            <span>Citizen Portal</span>
+        <!-- Center: Citizen Only Navigation (Strictly Civic Links) -->
+        <nav class="hidden md:flex items-center space-x-2" aria-label="Citizen Navigation">
+          <a href="#requests-tracker" class="px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-slate-800 shadow-inner border border-slate-700 hover:bg-slate-750 transition flex items-center space-x-1.5">
+            <span>📋</span>
+            <span>My Grievances</span>
           </a>
-
-          <a href="/officer"
-             class="px-3 py-2 rounded-md text-xs font-medium transition flex items-center space-x-1.5 {% if active_page == 'officer' %}bg-slate-800 text-white font-semibold shadow-inner border-b-2 border-amber-400{% else %}text-slate-300 hover:text-white hover:bg-slate-800/60{% endif %}"
-             id="nav-officer">
-            <span>Triage Intake</span>
+          <a href="#grievance-form" class="px-3 py-1.5 rounded-md text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800/60 transition flex items-center space-x-1.5">
+            <span>✍️</span>
+            <span>Lodge Grievance</span>
           </a>
-
-          <a href="/field-officer"
-             class="px-3 py-2 rounded-md text-xs font-medium transition flex items-center space-x-1.5 {% if active_page == 'field-officer' %}bg-slate-800 text-white font-semibold shadow-inner border-b-2 border-amber-400{% else %}text-slate-300 hover:text-white hover:bg-slate-800/60{% endif %}"
-             id="nav-field-officer">
-            <span>Field Work Orders</span>
-          </a>
-
-          <a href="/supervisor"
-             class="px-3 py-2 rounded-md text-xs font-medium transition flex items-center space-x-1.5 {% if active_page == 'supervisor' %}bg-slate-800 text-white font-semibold shadow-inner border-b-2 border-amber-400{% else %}text-slate-300 hover:text-white hover:bg-slate-800/60{% endif %}"
-             id="nav-supervisor">
-            <span>Supervisor Command</span>
-          </a>
-
-          <a href="/audit"
-             class="px-3 py-2 rounded-md text-xs font-medium transition flex items-center space-x-1.5 {% if active_page == 'audit' %}bg-slate-800 text-white font-semibold shadow-inner border-b-2 border-amber-400{% else %}text-slate-300 hover:text-white hover:bg-slate-800/60{% endif %}"
-             id="nav-audit">
-            <span>Audit Trail</span>
-          </a>
+          <button type="button" onclick="CitizenPortal.togglePreferencesModal(true)" class="px-3 py-1.5 rounded-md text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800/60 transition flex items-center space-x-1.5">
+            <span>🔔</span>
+            <span>Email &amp; Preferences</span>
+          </button>
         </nav>
 
-        <!-- Right: Simulated Clock & Persona Switcher -->
+        <!-- Right: Citizen Profile Avatar Menu -->
         <div class="flex items-center space-x-3">
-          
-          <!-- Simulated Clock Display Pill -->
-          <div class="hidden lg:flex items-center space-x-1.5 px-2.5 py-1 rounded bg-slate-800/90 border border-slate-700 text-slate-300" title="Simulated Municipal Clock">
-            <svg class="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span id="header-clock-display" class="font-mono text-[11px] text-slate-200 font-medium">Syncing Clock...</span>
-          </div>
-
-          <!-- Actor Identity Dropdown (X-Actor-ID client-side demo selector) -->
-          <div class="flex items-center space-x-2 pl-2 border-l border-slate-800">
-            <div class="text-right hidden sm:block">
-              <div id="header-actor-name" class="text-xs font-semibold text-slate-200 leading-tight">Loading Persona...</div>
-              <div class="flex items-center justify-end space-x-1">
-                <span id="header-actor-role" class="text-[10px] text-amber-400 font-medium">Citizen</span>
-                <span class="text-[9px] text-slate-500 font-mono" id="header-actor-id">USR-CIT-01</span>
+          <div class="flex items-center space-x-2.5 bg-slate-800/80 border border-slate-700/80 rounded-lg px-3 py-1.5">
+            <div class="w-7 h-7 rounded-full bg-emerald-600 text-white font-bold text-xs flex items-center justify-center flex-shrink-0 shadow-sm">
+              {{ (current_user.name[0] if current_user and current_user.name else 'R') | upper }}
+            </div>
+            <div class="text-left hidden sm:block">
+              <div class="text-xs font-semibold text-slate-200 leading-tight">
+                {{ current_user.name if current_user else 'Ramesh Patel' }}
+              </div>
+              <div class="flex items-center space-x-1.5 mt-0.5">
+                <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-400">Citizen</span>
+                <span class="hidden" id="header-actor-id" data-actor-id="{{ default_actor_id or 'USR-CIT-01' }}">{{ default_actor_id or 'USR-CIT-01' }}</span>
               </div>
             </div>
-
-            <div class="relative">
-              <select id="header-persona-select"
-                      aria-label="Demo Persona Switcher"
-                      class="text-xs font-medium bg-slate-800 text-slate-200 border border-slate-700 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-500 hover:bg-slate-700/80 cursor-pointer">
-                {% for p in personas %}
-                <option value="{{ p.id }}" {% if p.id == default_actor_id %}selected{% endif %}>
-                  {{ p.name }} ({{ p.badge }})
-                </option>
-                {% endfor %}
-              </select>
-            </div>
+            <button onclick="GovFix.signOut()" title="Sign Out" class="ml-2 text-xs font-medium text-slate-300 hover:text-rose-400 px-2.5 py-1 rounded bg-slate-900 border border-slate-700 hover:border-rose-500/40 transition">
+              Sign Out
+            </button>
           </div>
-
         </div>
+
       </div>
     </div>
 
     <!-- Mobile Sub-Navigation -->
-    <div class="md:hidden border-t border-slate-800 px-3 py-2 flex items-center justify-between overflow-x-auto gap-2">
-      <a href="/citizen" class="text-xs px-2 py-1 rounded {% if active_page == 'citizen' %}bg-slate-800 text-amber-400 font-bold{% else %}text-slate-400{% endif %}">Citizen</a>
-      <a href="/officer" class="text-xs px-2 py-1 rounded {% if active_page == 'officer' %}bg-slate-800 text-amber-400 font-bold{% else %}text-slate-400{% endif %}">Officer</a>
-      <a href="/field-officer" class="text-xs px-2 py-1 rounded {% if active_page == 'field-officer' %}bg-slate-800 text-amber-400 font-bold{% else %}text-slate-400{% endif %}">Field</a>
-      <a href="/supervisor" class="text-xs px-2 py-1 rounded {% if active_page == 'supervisor' %}bg-slate-800 text-amber-400 font-bold{% else %}text-slate-400{% endif %}">Supervisor</a>
-      <a href="/audit" class="text-xs px-2 py-1 rounded {% if active_page == 'audit' %}bg-slate-800 text-amber-400 font-bold{% else %}text-slate-400{% endif %}">Audit</a>
+    <div class="md:hidden border-t border-slate-800 px-3 py-2 flex items-center justify-between gap-2 text-xs">
+      <a href="#requests-tracker" class="px-2 py-1 rounded text-amber-400 font-bold bg-slate-800">My Grievances</a>
+      <a href="#grievance-form" class="px-2 py-1 rounded text-slate-300">Lodge Complaint</a>
+      <button onclick="GovFix.signOut()" class="text-rose-400 font-medium">Sign Out</button>
     </div>
   </header>
 
@@ -150,8 +121,8 @@
             <h1 class="text-xl sm:text-2xl font-bold leading-7 text-slate-900 tracking-tight" id="page-heading">
               {{ page_title }}
             </h1>
-            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-300 uppercase tracking-wider">
-              {{ default_persona_role }}
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase tracking-wider">
+              Citizen Portal
             </span>
           </div>
           <p class="mt-1 text-xs sm:text-sm text-slate-500 max-w-3xl leading-relaxed">
@@ -159,7 +130,129 @@
           </p>
         </div>
         <div class="mt-4 flex md:mt-0 md:ml-4 items-center space-x-3">
-          {% block header_actions %}{% endblock %}
+
+{% else %}
+<!-- ============================================================================== -->
+<!-- Staff Console Workspaces (Dark/Slate Sidebar #0f172a, Dense Work-Focused)       -->
+<!-- ============================================================================== -->
+<body class="min-h-screen flex bg-slate-900 font-sans text-slate-800 antialiased overflow-x-hidden">
+  
+  <!-- Left Sidebar (#0f172a theme, dense work-focused) -->
+  <aside class="w-64 min-h-screen bg-[#0f172a] text-slate-200 border-r border-slate-800 flex flex-col flex-shrink-0 z-30">
+    <!-- Sidebar Brand -->
+    <div class="p-4 bg-[#090d16] border-b border-slate-800 flex items-center space-x-3">
+      <div class="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-amber-400">
+        <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24">
+          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+        </svg>
+      </div>
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center space-x-1.5">
+          <span class="font-bold text-sm text-white tracking-tight">GovFix</span>
+          <span class="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.2 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded">Staff</span>
+        </div>
+        <p class="text-[10px] text-slate-400 truncate">
+          {% if active_page == 'officer' %}Municipal Triage Desk
+          {% elif active_page == 'field-officer' %}Field Execution Desk
+          {% elif active_page == 'supervisor' %}Supervisor Operations
+          {% elif active_page == 'audit' %}Audit &amp; Compliance
+          {% else %}Staff Console{% endif %}
+        </p>
+      </div>
+    </div>
+
+    <!-- Permitted Navigation Links for Active Persona Role -->
+    <nav class="flex-1 p-3 space-y-1 overflow-y-auto" aria-label="Staff Workspace Navigation">
+      {% if active_page == 'officer' %}
+        <div class="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">Triage Desk</div>
+        <a href="/staff/triage" class="flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-semibold bg-slate-800 text-white border-l-4 border-amber-400 shadow-sm" id="nav-officer">
+          <span>📥</span>
+          <span>Intake Queue</span>
+        </a>
+      {% elif active_page == 'field-officer' %}
+        <div class="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">Field Execution</div>
+        <a href="/staff/field" class="flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-semibold bg-slate-800 text-white border-l-4 border-amber-400 shadow-sm" id="nav-field-officer">
+          <span>🛠️</span>
+          <span>Field Work Orders</span>
+        </a>
+      {% elif active_page == 'supervisor' %}
+        <div class="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">Command Center</div>
+        <a href="/staff/supervisor" class="flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-semibold bg-slate-800 text-white border-l-4 border-amber-400 shadow-sm" id="nav-supervisor">
+          <span>⚡</span>
+          <span>Supervisor Command</span>
+        </a>
+        <div class="px-2 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">Supervised Queues</div>
+        <a href="/staff/triage" class="flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800/60 transition">
+          <span>📥</span>
+          <span>Triage Intake</span>
+        </a>
+        <a href="/staff/audit" class="flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800/60 transition">
+          <span>🛡️</span>
+          <span>Audit Log</span>
+        </a>
+      {% elif active_page == 'audit' %}
+        <div class="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">Audit &amp; Oversight</div>
+        <a href="/staff/audit" class="flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-semibold bg-slate-800 text-white border-l-4 border-amber-400 shadow-sm" id="nav-audit">
+          <span>🛡️</span>
+          <span>Audit Trail</span>
+        </a>
+      {% endif %}
+    </nav>
+
+    <!-- Sidebar User Footer (Avatar, Name, Role, Sign Out) -->
+    <div class="p-3 bg-[#090d16] border-t border-slate-800">
+      <div class="flex items-center space-x-2.5">
+        <div class="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 text-amber-400 font-bold text-xs flex items-center justify-center flex-shrink-0">
+          {{ (current_user.name[0] if current_user and current_user.name else 'S') | upper }}
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="text-xs font-semibold text-white truncate">
+            {{ current_user.name if current_user else 'Staff Officer' }}
+          </div>
+          <div class="flex items-center space-x-1.5">
+            <span class="text-[10px] text-amber-400 font-medium">{{ current_user.role }}</span>
+            <span class="text-[9px] text-slate-500 font-mono" id="header-actor-id" data-actor-id="{{ default_actor_id or current_user.id }}">{{ default_actor_id or current_user.id }}</span>
+          </div>
+        </div>
+      </div>
+      <button onclick="GovFix.signOut()" class="w-full mt-2.5 px-2.5 py-1.5 text-xs font-medium bg-slate-800/80 hover:bg-rose-900/40 text-slate-300 hover:text-rose-200 border border-slate-700/80 hover:border-rose-500/30 rounded-lg transition flex items-center justify-center space-x-1.5">
+        <span>Sign Out</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- Right Content Container -->
+  <div class="flex-1 flex flex-col min-w-0 bg-slate-100/60 min-h-screen">
+    <!-- Tricolor Banner -->
+    <div class="gov-tricolor-strip w-full"></div>
+
+    <!-- Staff Header Bar -->
+    <header class="bg-white border-b border-slate-200 shadow-xs px-6 py-3.5 flex items-center justify-between sticky top-0 z-20">
+      <div class="min-w-0">
+        <div class="flex items-center space-x-2">
+          <h1 class="text-lg font-bold text-slate-900 tracking-tight" id="page-heading">{{ page_title }}</h1>
+          <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-300 uppercase tracking-wider">
+            {{ current_user.role }}
+          </span>
+        </div>
+        <p class="text-xs text-slate-500 truncate max-w-2xl mt-0.5">{{ page_subtitle }}</p>
+      </div>
+
+      <div class="flex items-center space-x-3 flex-shrink-0">
+        <!-- Supervisor Clock Pill (Only on supervisor page) -->
+        {% if active_page == 'supervisor' %}
+        <div class="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-slate-200 shadow-xs" title="Simulated Municipal Clock">
+          <svg class="w-3.5 h-3.5 text-amber-400 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span id="header-clock-display" class="font-mono text-xs text-slate-200 font-medium">Syncing Clock...</span>
+        </div>
+        {% endif %}
+{% endif %}
+
+        {% block header_actions %}{% endblock %}
+
+{% if active_page == 'citizen' %}
         </div>
       </div>
     </div>
@@ -167,9 +260,18 @@
 
   <!-- Primary Page Body -->
   <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+{% else %}
+      </div>
+    </header>
+
+    <!-- Main Workspace Content -->
+    <main class="flex-1 p-6">
+{% endif %}
+
     {% block content %}{% endblock %}
   </main>
 
+{% if active_page == 'citizen' %}
   <!-- Global Municipal Footer -->
   <footer class="bg-white border-t border-slate-200 py-4 mt-auto">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-2">
@@ -178,10 +280,25 @@
         <span>Deterministic Workflow Engine &middot; SHA-256 Audit Trail Active</span>
       </div>
       <div>
-        <span>GovFix Municipal Redressal MVP &middot; Statutory SLA Enforcement</span>
+        <span>GovFix Municipal Redressal &middot; Statutory SLA Enforcement</span>
       </div>
     </div>
   </footer>
+</body>
+{% else %}
+    <!-- Staff Footer -->
+    <footer class="bg-white border-t border-slate-200 px-6 py-3 text-xs text-slate-500 flex items-center justify-between">
+      <div class="flex items-center space-x-2">
+        <span class="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
+        <span>Deterministic Workflow Engine &middot; SHA-256 Audit Trail Active</span>
+      </div>
+      <div>
+        <span>GovFix Staff Console &middot; Municipal Redressal MVP</span>
+      </div>
+    </footer>
+  </div>
+</body>
+{% endif %}
 
   <!-- Toast Notification Container -->
   <div id="govfix-toast-container"></div>
@@ -190,31 +307,13 @@
   <script src="/static/app.js"></script>
 
   <script>
-    // Ensure active persona matches page or defaults cleanly
     document.addEventListener("DOMContentLoaded", () => {
-      const stored = localStorage.getItem("govfix_actor_id");
       const defaultActorId = "{{ default_actor_id }}";
-      const expectedRole = "{{ default_persona_role }}";
-      if (!stored) {
+      if (defaultActorId) {
         GovFix.setActorId(defaultActorId);
-      } else {
-        const persona = GovFix.getPersona(stored);
-        const isCompatible = (
-          (expectedRole === "Citizen" && persona.role === "Citizen") ||
-          (expectedRole === "Officer" && (persona.role === "Officer" || persona.role === "Supervisor")) ||
-          (expectedRole === "Field Officer" && (persona.role === "Field Officer" || persona.role === "Supervisor")) ||
-          (expectedRole === "Supervisor" && persona.role === "Supervisor") ||
-          (expectedRole === "Audit Inspector" && (persona.role === "Audit Inspector" || persona.role === "Supervisor"))
-        );
-        if (!isCompatible) {
-          GovFix.setActorId(defaultActorId);
-        } else {
-          GovFix.initHeaderControls();
-        }
       }
     });
   </script>
 
   {% block scripts %}{% endblock %}
-</body>
 </html>

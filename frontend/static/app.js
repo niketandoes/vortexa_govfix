@@ -50,11 +50,15 @@ const GovFix = (function () {
   // Generic API request handler
   async function apiRequest(endpoint, options = {}) {
     const actorId = getStoredActorId();
+    const token = localStorage.getItem("govfix_token");
     const headers = {
       "Content-Type": "application/json",
       "X-Actor-ID": actorId,
       ...(options.headers || {}),
     };
+    if (token && !headers["Authorization"]) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
 
     const config = {
       ...options,
@@ -66,6 +70,13 @@ const GovFix = (function () {
       const data = await response.json();
 
       if (!response.ok || (data && data.success === false)) {
+        if (response.status === 401 && typeof window !== "undefined" && window.location) {
+          const path = window.location.pathname || "";
+          if (!path.startsWith("/login") && !path.startsWith("/signup")) {
+            localStorage.removeItem("govfix_token");
+            window.location.href = `/login?next=${encodeURIComponent(path)}`;
+          }
+        }
         const errorObj = (data && data.error) ? data.error : {
           code: "HTTP_" + response.status,
           message: data.detail || response.statusText || "Request failed",
@@ -516,11 +527,28 @@ const GovFix = (function () {
     }
   }
 
+  async function signOut() {
+    try {
+      await fetch("/api/v1/auth/logout", { method: "POST", credentials: "include" });
+    } catch (_) {}
+    localStorage.removeItem("govfix_token");
+    localStorage.removeItem("govfix_user");
+    localStorage.removeItem("govfix_actor_id");
+    window.location.href = "/login";
+  }
+
+  async function getCitizenStats() {
+    return apiRequest("/api/v1/citizen/stats");
+  }
+
   return {
     PERSONAS,
     getStoredActorId,
     setActorId,
     getPersona,
+    apiRequest,
+    signOut,
+    getCitizenStats,
     listRequests,
     getRequest,
     getRequestHistory,

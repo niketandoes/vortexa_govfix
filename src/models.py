@@ -15,6 +15,7 @@ class UserRole(StrEnum):
     FIELD_OFFICER = "Field Officer"
     SUPERVISOR = "Supervisor"
     AUDIT_INSPECTOR = "Audit Inspector"
+    ADMIN = "Admin"
 
 
 class ActorRole(StrEnum):
@@ -23,6 +24,7 @@ class ActorRole(StrEnum):
     FIELD_OFFICER = "Field Officer"
     SUPERVISOR = "Supervisor"
     AUDIT_INSPECTOR = "Audit Inspector"
+    ADMIN = "Admin"
     SYSTEM = "System"
 
 
@@ -88,8 +90,41 @@ class UserCreate(GovFixModel):
     name: str = Field(min_length=1)
     role: UserRole
     email: str = Field(min_length=3)
+    firebase_uid: str | None = None
+    status: str = Field(default="active")
+    is_verified: bool = Field(default=False)
     department: str | None = None
     created_at: datetime
+
+
+class UserRecord(GovFixModel):
+    id: str
+    name: str
+    role: UserRole
+    email: str
+    firebase_uid: str | None = None
+    status: str = "active"
+    is_verified: bool = False
+    department: str | None = None
+    created_at: datetime
+
+
+class CitizenSignupRequest(GovFixModel):
+    name: str = Field(min_length=1, max_length=100)
+    email: str = Field(min_length=3, max_length=100)
+    password: str = Field(min_length=6)
+
+
+class StaffCreateRequest(GovFixModel):
+    name: str = Field(min_length=1, max_length=100)
+    email: str = Field(min_length=3, max_length=100)
+    role: UserRole
+    department: str | None = None
+
+
+class UserStatusUpdateRequest(GovFixModel):
+    status: str = Field(pattern=r"^(active|disabled)$")
+
 
 
 class RequestCreate(GovFixModel):

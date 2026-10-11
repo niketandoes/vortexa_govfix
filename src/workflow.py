@@ -1096,6 +1096,18 @@ class WorkflowService:
                     details = json.loads(row["details_json"])
                 except Exception:
                     details = {}
+            if actor["role"] == UserRole.CITIZEN.value and details.get("assigned_to"):
+                officer = self.connection.execute(
+                    "SELECT name, department FROM users WHERE id = ?",
+                    (details["assigned_to"],),
+                ).fetchone()
+                if officer:
+                    details["assigned_to"] = officer["name"]
+                    details["assigned_team"] = officer["department"] or "Municipal Field Team"
+                else:
+                    details["assigned_to"] = "Field Operations Officer"
+                    details["assigned_team"] = "Municipal Field Operations"
+
             events.append(
                 {
                     "id": row["id"],
@@ -1127,11 +1139,11 @@ class WorkflowService:
                 code="ACTOR_NOT_FOUND",
                 message="Actor does not exist",
             )
-        if actor["role"] == UserRole.AUDIT_INSPECTOR.value:
+        if actor["role"] in {UserRole.AUDIT_INSPECTOR.value, UserRole.ADMIN.value}:
             raise WorkflowError(
                 status_code=403,
                 code="ROLE_NOT_PERMITTED",
-                message="Audit Inspector cannot access operational requests",
+                message=f"{actor['role']} cannot access operational requests",
                 actor_role=actor["role"],
             )
         clauses: list[str] = []
@@ -1288,4 +1300,17 @@ class WorkflowService:
                 pass
         result["is_overdue"] = self._is_overdue(request)
         result["permitted_actions"] = self._permitted_actions(request, actor)
+        if actor["role"] == UserRole.CITIZEN.value and result.get("assigned_to"):
+            officer = self.connection.execute(
+                "SELECT name, department FROM users WHERE id = ?",
+                (result["assigned_to"],),
+            ).fetchone()
+            if officer:
+                result["assigned_officer_name"] = officer["name"]
+                result["assigned_team"] = officer["department"] or "Municipal Field Team"
+                result["assigned_to"] = officer["name"]
+            else:
+                result["assigned_officer_name"] = "Field Operations Officer"
+                result["assigned_team"] = "Municipal Field Operations"
+                result["assigned_to"] = "Field Operations Officer"
         return result
