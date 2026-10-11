@@ -118,6 +118,30 @@ class VersionedCommand(GovFixModel):
     expected_version: int = Field(ge=1)
 
 
+class TransitionCommand(VersionedCommand):
+    to_state: RequestState
+    assigned_to: str | None = None
+    rejection_reason: str | None = None
+    resolution_notes: str | None = None
+    reopen_reason: str | None = None
+
+
+class CategoryCommand(VersionedCommand):
+    category: Category
+
+    @field_validator("category")
+    @classmethod
+    def category_must_be_specific(cls, value: Category) -> Category:
+        if value is Category.UNCATEGORISED:
+            raise ValueError("confirmed category must be specific")
+        return value
+
+
+class ReassignCommand(VersionedCommand):
+    assigned_to: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+
+
 class AISuggestionCreate(GovFixModel):
     id: str
     request_id: str

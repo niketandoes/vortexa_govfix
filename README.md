@@ -41,4 +41,37 @@ python -m unittest discover -s tests -v
 python -m uvicorn src.main:app --reload
 ```
 
-The Plan 1 application exposes `GET /health`. Workflow endpoints are implemented in Plan 2.
+The application exposes `GET /health` plus the Plan 2 workflow API.
+
+## Workflow API
+
+Every request uses a seeded demo identity header. Roles are always loaded from the database.
+
+```text
+X-Actor-ID: USR-CIT-01
+```
+
+Main endpoints:
+
+```text
+POST /api/v1/requests
+POST /api/v1/requests/{id}/transition
+POST /api/v1/requests/{id}/category
+POST /api/v1/requests/{id}/reassign
+GET  /api/v1/requests/{id}
+GET  /api/v1/requests
+GET  /api/v1/audit
+```
+
+All mutations after creation require `expected_version`. Accepted actions update the request and audit record atomically. Refused workflow attempts are also committed to the append-only audit history.
+
+Example transition:
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri http://127.0.0.1:8000/api/v1/requests/REQ-2026-0001/transition `
+  -Headers @{ 'X-Actor-ID' = 'USR-OFF-01' } `
+  -ContentType 'application/json' `
+  -Body '{"to_state":"ACKNOWLEDGED","expected_version":1}'
+```
