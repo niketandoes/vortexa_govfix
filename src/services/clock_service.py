@@ -153,6 +153,28 @@ class ClockService:
 
         return self.now()
 
+    def unfreeze(self) -> datetime:
+        """Unfreeze simulated time so it resumes progressing from frozen moment."""
+        with self._lock:
+            state = self._fetch_state()
+            if not state["is_frozen"] or not state["frozen_at"]:
+                return self.now()
+            frozen_dt = datetime.fromisoformat(state["frozen_at"].replace("Z", "+00:00")).astimezone(UTC)
+            wall_dt = datetime.now(UTC)
+            new_offset = int((frozen_dt - wall_dt).total_seconds())
+            conn = self._get_conn()
+            try:
+                conn.execute(
+                    "UPDATE clock_state SET offset_seconds = ?, is_frozen = 0, frozen_at = NULL, updated_at = ? WHERE id = 1",
+                    (new_offset, utc_iso(wall_dt))
+                )
+                conn.commit()
+            finally:
+                if self._shared_connection is None:
+                    conn.close()
+
+        return self.now()
+
     def reset(self) -> datetime:
         """Reset simulated clock offsets back to real UTC system time."""
         wall_now = utc_iso(datetime.now(UTC))

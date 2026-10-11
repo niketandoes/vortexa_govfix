@@ -193,10 +193,24 @@
     // Ensure active persona matches page or defaults cleanly
     document.addEventListener("DOMContentLoaded", () => {
       const stored = localStorage.getItem("govfix_actor_id");
+      const defaultActorId = "{{ default_actor_id }}";
+      const expectedRole = "{{ default_persona_role }}";
       if (!stored) {
-        GovFix.setActorId("{{ default_actor_id }}");
+        GovFix.setActorId(defaultActorId);
       } else {
-        GovFix.initHeaderControls();
+        const persona = GovFix.getPersona(stored);
+        const isCompatible = (
+          (expectedRole === "Citizen" && persona.role === "Citizen") ||
+          (expectedRole === "Officer" && (persona.role === "Officer" || persona.role === "Supervisor")) ||
+          (expectedRole === "Field Officer" && (persona.role === "Field Officer" || persona.role === "Supervisor")) ||
+          (expectedRole === "Supervisor" && persona.role === "Supervisor") ||
+          (expectedRole === "Audit Inspector" && (persona.role === "Audit Inspector" || persona.role === "Supervisor"))
+        );
+        if (!isCompatible) {
+          GovFix.setActorId(defaultActorId);
+        } else {
+          GovFix.initHeaderControls();
+        }
       }
     });
   </script>

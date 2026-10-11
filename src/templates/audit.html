@@ -140,7 +140,9 @@
 
       try {
         const response = await GovFix.getAuditLog();
-        const items = (response && response.items) ? response.items : (Array.isArray(response) ? response : []);
+        const items = (response && response.data && response.data.records)
+          ? response.data.records
+          : ((response && response.items) ? response.items : (Array.isArray(response) ? response : []));
         this.events = items;
 
         this.updateMetrics(items);
@@ -155,10 +157,10 @@
 
     updateMetrics(items) {
       document.getElementById("audit-metric-total").textContent = items.length;
-      document.getElementById("audit-metric-accepted").textContent = items.filter(e => !e.is_refusal && e.decision !== "REFUSED").length;
-      document.getElementById("audit-metric-refused").textContent = items.filter(e => e.is_refusal || e.decision === "REFUSED").length;
+      document.getElementById("audit-metric-accepted").textContent = items.filter(e => e.outcome === "ACCEPTED" || (!e.is_refusal && e.decision !== "REFUSED")).length;
+      document.getElementById("audit-metric-refused").textContent = items.filter(e => e.outcome === "REFUSED" || e.is_refusal || e.decision === "REFUSED").length;
       
-      const actors = new Set(items.map(e => e.actor_id).filter(Boolean));
+      const actors = new Set(items.map(e => e.actor || e.actor_id).filter(Boolean));
       document.getElementById("audit-metric-actors").textContent = actors.size;
     },
 
@@ -170,9 +172,9 @@
 
       let filtered = this.events;
       if (filter === "refused") {
-        filtered = filtered.filter(e => e.is_refusal || e.decision === "REFUSED");
+        filtered = filtered.filter(e => e.outcome === "REFUSED" || e.is_refusal || e.decision === "REFUSED");
       } else if (filter === "accepted") {
-        filtered = filtered.filter(e => !e.is_refusal && e.decision !== "REFUSED");
+        filtered = filtered.filter(e => e.outcome === "ACCEPTED" || (!e.is_refusal && e.decision !== "REFUSED"));
       }
 
       if (filtered.length === 0) {
@@ -185,7 +187,7 @@
       if (table) table.classList.remove("hidden");
 
       tbody.innerHTML = filtered.map((ev, idx) => {
-        const isRefusal = ev.is_refusal || ev.decision === "REFUSED";
+        const isRefusal = ev.outcome === "REFUSED" || ev.is_refusal || ev.decision === "REFUSED";
         const decisionBadge = isRefusal
           ? '<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">REFUSED</span>'
           : '<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">ACCEPTED</span>';
@@ -196,8 +198,8 @@
         return `
           <tr class="hover:bg-slate-50 transition border-b border-slate-100 ${isRefusal ? 'bg-rose-50/30' : ''}">
             <td class="px-3 py-3 font-mono text-slate-500 font-tabular text-[11px]">${ev.id || idx + 1}</td>
-            <td class="px-3 py-3 text-slate-600 font-mono text-[11px]">${GovFix.formatDate(ev.timestamp || ev.created_at)}</td>
-            <td class="px-3 py-3 font-mono font-semibold text-slate-800">${ev.actor_id || "SYSTEM"}</td>
+            <td class="px-3 py-3 text-slate-600 font-mono text-[11px]">${GovFix.formatDate(ev.simulated_at || ev.timestamp || ev.created_at)}</td>
+            <td class="px-3 py-3 font-mono font-semibold text-slate-800">${ev.actor || ev.actor_id || "SYSTEM"}</td>
             <td class="px-3 py-3">
               <span class="font-semibold text-slate-800">${ev.action || ev.event_type}</span>
               ${ev.reason ? `<div class="text-[10px] text-slate-400 truncate max-w-xs">${ev.reason}</div>` : ''}
@@ -248,6 +250,10 @@
   };
 
   document.addEventListener("DOMContentLoaded", () => {
+    const currentActor = GovFix.getStoredActorId();
+    if (currentActor !== "USR-AUD-01" && currentActor !== "USR-SUP-01") {
+      GovFix.setActorId("USR-AUD-01");
+    }
     AuditConsole.loadAuditEvents();
     window.addEventListener("govfix:persona-changed", () => AuditConsole.loadAuditEvents());
   });

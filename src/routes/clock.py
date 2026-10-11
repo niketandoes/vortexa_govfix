@@ -67,6 +67,16 @@ def freeze_clock(clock: ClockService = Depends(get_clock_service)) -> Dict[str, 
     }
 
 
+@router.post("/unfreeze", summary="Resume simulated clock")
+def unfreeze_clock(clock: ClockService = Depends(get_clock_service)) -> Dict[str, Any]:
+    """Unfreeze simulated clock and resume time progression."""
+    clock.unfreeze()
+    return {
+        "success": True,
+        "clock": clock.get_state()
+    }
+
+
 @router.post("/reset", summary="Reset clock to real-world UTC")
 def reset_clock(
     clock: ClockService = Depends(get_clock_service),

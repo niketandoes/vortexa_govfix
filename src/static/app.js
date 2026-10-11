@@ -161,6 +161,27 @@ const GovFix = (function () {
     });
   }
 
+  async function submitAppeal(requestId, appealReason, expectedVersion) {
+    return apiRequest(`/api/v1/requests/${requestId}/appeal`, {
+      method: "POST",
+      body: JSON.stringify({
+        appeal_reason: appealReason,
+        expected_version: expectedVersion,
+      }),
+    });
+  }
+
+  async function addProgress(requestId, note, evidenceJson, expectedVersion) {
+    return apiRequest(`/api/v1/requests/${requestId}/progress`, {
+      method: "POST",
+      body: JSON.stringify({
+        note: note,
+        evidence_json: evidenceJson || null,
+        expected_version: expectedVersion,
+      }),
+    });
+  }
+
   // Clock & SLA API
   async function getClockState() {
     return apiRequest("/api/v1/clock");
@@ -175,6 +196,10 @@ const GovFix = (function () {
 
   async function freezeClock() {
     return apiRequest("/api/v1/clock/freeze", { method: "POST" });
+  }
+
+  async function unfreezeClock() {
+    return apiRequest("/api/v1/clock/unfreeze", { method: "POST" });
   }
 
   async function resetClock() {
@@ -503,11 +528,14 @@ const GovFix = (function () {
     getRequestSuggestions,
     createRequest,
     transitionRequest,
+    submitAppeal,
+    addProgress,
     confirmCategory,
     reassignRequest,
     getClockState,
     advanceClock,
     freezeClock,
+    unfreezeClock,
     resetClock,
     getAuditLog,
     verifyAuditChain,

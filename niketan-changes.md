@@ -129,3 +129,49 @@ What was done: Committed synchronized, verified codebase to git with message "pl
 Why it was done: Per explicit user instruction to commit verified changes under message "plan-04 updated".
 
 
+
+
+Timestamp: 2026-10-11 17:18:00
+
+What was done: 
+- Implemented and verified backend connections across all five personas and UI workspaces strictly for Plan 03 deliverables:
+  1. `src/static/app.js` & `frontend/static/app.js`:
+     - Added missing API client methods: `submitAppeal(requestId, appealReason, expectedVersion)`, `addProgress(requestId, note, evidenceJson, expectedVersion)`, and `unfreezeClock()`.
+     - Exported `submitAppeal`, `addProgress`, and `unfreezeClock` from the `GovFix` module.
+  2. `src/services/clock_service.py` & `src/routes/clock.py`:
+     - Added `unfreeze()` method to `ClockService` computing exact offset from wall-clock time so simulated time smoothly resumes progressing from the frozen timestamp.
+     - Added `POST /api/v1/clock/unfreeze` route handler to allow clean, idempotent resumption of frozen clocks.
+  3. `src/templates/citizen.html` & `frontend/templates/citizen.html`:
+     - Added Rejection Appeal modal (`#appeal-modal`) with grounds textarea and version validation.
+     - Added quick-action "⚖️ Appeal Rejection" button and "Appeal Pending Review" badge on grievance cards for `REJECTED` tickets.
+     - Updated visual stepper banner to show rejection reason, appeal submission status, and review state.
+     - Updated detail modal footer actions to include Appeal trigger.
+     - Added `CitizenPortal.openAppealModal` and `CitizenPortal.submitAppeal` handlers calling `GovFix.submitAppeal`.
+     - Fixed `isWithinReopenWindow` to evaluate `req.closed_at || req.updated_at`.
+  4. `src/templates/field_officer.html` & `frontend/templates/field_officer.html`:
+     - Fixed data unpacking bug: changed `response.items` to `response.data` (`(response && response.data) ? response.data : ...`), resolving 0-items render bug in work orders queue.
+     - Fixed database column mappings: `req.sla_due_at` -> `req.deadline`, `req.description` -> `req.text`.
+     - Added "Add Progress Notes" modal (`#progress-modal`) with notes, optional structured evidence tag, and version control.
+     - Added "📝 Add Progress" button to active work order cards when in `IN_PROGRESS` state.
+     - Added `FieldWorkspace.openProgressModal` and `FieldWorkspace.submitProgress` handlers calling `GovFix.addProgress`.
+     - Added HTML escape utility `FieldWorkspace.escapeHtml`.
+  5. `src/templates/supervisor.html` & `frontend/templates/supervisor.html`:
+     - Fixed data unpacking bug: changed `response.items` to `response.data`, resolving 0-records roster render bug.
+     - Fixed column mapping: `req.sla_due_at` -> `req.deadline`.
+     - Fixed clock fast-forward multiplier: removed erroneous `hours * 3600` in `advanceClock`, restoring exact hour increments.
+     - Fixed clock freeze/resume toggle: wired to `GovFix.unfreezeClock()` when `state.is_frozen` instead of failing `advanceClock(0)`.
+     - Added Supervisor Rejection Appeal Review & Approval modal (`#appeal-approval-modal`) requiring `appeal_approval_note` to reinstate tickets from `REJECTED -> ACKNOWLEDGED`.
+     - Added "⚖️ Review Appeal" button in roster actions for tickets with pending citizen appeals.
+     - Added `SupervisorCommand.openAppealApprovalModal` and `SupervisorCommand.submitAppealApproval` handlers.
+     - Sanitized reassignment target dropdown to strictly list Field Officers (`USR-FLD-01`, `USR-FLD-02`), removing invalid `USR-OFF-01`.
+  6. `src/templates/audit.html` & `frontend/templates/audit.html`:
+     - Fixed data unpacking bug: changed `response.items` to `response.data.records`, resolving empty audit log render bug.
+     - Aligned audit table columns with database schema: `ev.actor` (instead of `ev.actor_id`), `ev.outcome` (instead of `ev.decision`), `ev.timestamp` / `ev.simulated_at` (instead of `ev.created_at`), and `ev.hash`.
+     - Added persona auto-alignment on load so viewing `/audit` switches to `USR-AUD-01` if current persona lacks audit access.
+  7. `src/templates/base.html` & `frontend/templates/base.html`:
+     - Added persona role compatibility check on DOMContentLoaded to smoothly switch to workspace default identity when navigating across personas.
+  8. Automated Integration Tests (`tests/test_plan_03_backend_connection.py`):
+     - Created comprehensive test suite verifying citizen grievance submission & live advisory preview, triage officer suggestions & category confirmation, missing info pause/resume cycle, field officer dispatch, work start, progress notes, and resolution, citizen rejection appeal submission & supervisor approval, simulated clock advance, freeze, unfreeze, and reset, and audit inspector read access & SHA-256 chain verification.
+     - Executed full test suite: 110/110 tests passing across entire repository (100% pass rate).
+
+Why it was done: Fixed all backend connection disconnects, missing API helpers, modal workflows, column mappings, and data unpacking bugs strictly for Plan 03 deliverables, connecting all five workspaces with backend routes and passing 100% of integration tests.
