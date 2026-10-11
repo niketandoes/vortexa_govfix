@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS requests (
     citizen_id TEXT NOT NULL,
     title TEXT NOT NULL CHECK(length(trim(title)) > 0),
     text TEXT NOT NULL CHECK(length(trim(text)) > 0),
-    location TEXT,
+    location TEXT NOT NULL CHECK(length(trim(location)) > 0),
     reported_category TEXT CHECK(
         reported_category IS NULL OR reported_category IN (
             'Water Leak', 'Garbage Collection', 'Streetlight', 'Pothole'
@@ -31,8 +31,16 @@ CREATE TABLE IF NOT EXISTS requests (
         'RESOLVED', 'CLOSED', 'REJECTED', 'REOPENED'
     )),
     assigned_to TEXT,
+    assigned_at TEXT,
     rejection_reason TEXT,
+    appeal_reason TEXT,
+    appealed_at TEXT,
+    appeal_approval_note TEXT,
     resolution_notes TEXT,
+    resolution_evidence_json TEXT CHECK(
+        resolution_evidence_json IS NULL OR json_valid(resolution_evidence_json)
+    ),
+    reopen_reason TEXT,
     info_request_note TEXT,
     additional_info TEXT,
     paused_at TEXT,
@@ -44,6 +52,9 @@ CREATE TABLE IF NOT EXISTS requests (
     version INTEGER NOT NULL DEFAULT 1 CHECK(version >= 1),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
+    triage_deadline TEXT NOT NULL,
+    triaged_at TEXT,
+    closed_at TEXT,
     deadline TEXT NOT NULL,
     FOREIGN KEY(citizen_id) REFERENCES users(id) ON DELETE RESTRICT,
     FOREIGN KEY(assigned_to) REFERENCES users(id) ON DELETE RESTRICT
@@ -106,9 +117,9 @@ BEGIN
     SELECT CASE
         WHEN NOT EXISTS (
             SELECT 1 FROM users
-            WHERE id = NEW.assigned_to AND role IN ('Officer', 'Field Officer')
+            WHERE id = NEW.assigned_to AND role = 'Field Officer'
         )
-        THEN RAISE(ABORT, 'assigned_to must reference an Officer or Field Officer')
+        THEN RAISE(ABORT, 'assigned_to must reference a Field Officer')
     END;
 END;
 
@@ -119,9 +130,9 @@ BEGIN
     SELECT CASE
         WHEN NOT EXISTS (
             SELECT 1 FROM users
-            WHERE id = NEW.assigned_to AND role IN ('Officer', 'Field Officer')
+            WHERE id = NEW.assigned_to AND role = 'Field Officer'
         )
-        THEN RAISE(ABORT, 'assigned_to must reference an Officer or Field Officer')
+        THEN RAISE(ABORT, 'assigned_to must reference a Field Officer')
     END;
 END;
 

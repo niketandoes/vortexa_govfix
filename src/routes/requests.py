@@ -11,14 +11,17 @@ from fastapi import APIRouter, Depends, Header, Query
 from src.database import connect
 from src.models import (
     AdvisoryPreviewRequest,
+    AppealCommand,
     Category,
     CategoryCommand,
+    ProgressCommand,
     ReassignCommand,
     RequestCreate,
     RequestState,
     TransitionCommand,
 )
 from src.ai.local_classifier import LocalClassifier
+from src.services.clock_service import ClockService
 from src.workflow import WorkflowService
 
 
@@ -43,13 +46,19 @@ Connection = Annotated[sqlite3.Connection, Depends(get_connection)]
 ActorId = Annotated[str, Depends(get_actor_id)]
 
 
+def get_workflow_service(connection: Connection) -> WorkflowService:
+    clock = ClockService(connection=connection)
+    return WorkflowService(connection, now_provider=clock.now)
+
+
+Workflow = Annotated[WorkflowService, Depends(get_workflow_service)]
+
+
 @router.post("/requests", status_code=201)
 def create_request(
-    command: RequestCreate, connection: Connection, actor_id: ActorId
+    command: RequestCreate, actor_id: ActorId, workflow: Workflow
 ) -> dict:
-    data = WorkflowService(connection).create_request(
-        actor_id=actor_id, command=command
-    )
+    data = workflow.create_request(actor_id=actor_id, command=command)
     return {"success": True, "data": data}
 
 
@@ -57,10 +66,36 @@ def create_request(
 def transition_request(
     request_id: str,
     command: TransitionCommand,
-    connection: Connection,
     actor_id: ActorId,
+    workflow: Workflow,
 ) -> dict:
-    data = WorkflowService(connection).transition(
+    data = workflow.transition(
+        request_id=request_id, actor_id=actor_id, command=command
+    )
+    return {"success": True, "data": data}
+
+
+@router.post("/requests/{request_id}/appeal")
+def submit_request_appeal(
+    request_id: str,
+    command: AppealCommand,
+    actor_id: ActorId,
+    workflow: Workflow,
+) -> dict:
+    data = workflow.submit_appeal(
+        request_id=request_id, actor_id=actor_id, command=command
+    )
+    return {"success": True, "data": data}
+
+
+@router.post("/requests/{request_id}/progress")
+def add_request_progress(
+    request_id: str,
+    command: ProgressCommand,
+    actor_id: ActorId,
+    workflow: Workflow,
+) -> dict:
+    data = workflow.add_progress(
         request_id=request_id, actor_id=actor_id, command=command
     )
     return {"success": True, "data": data}
@@ -70,10 +105,10 @@ def transition_request(
 def confirm_request_category(
     request_id: str,
     command: CategoryCommand,
-    connection: Connection,
     actor_id: ActorId,
+    workflow: Workflow,
 ) -> dict:
-    data = WorkflowService(connection).confirm_category(
+    data = workflow.confirm_category(
         request_id=request_id, actor_id=actor_id, command=command
     )
     return {"success": True, "data": data}
@@ -83,10 +118,10 @@ def confirm_request_category(
 def reassign_request(
     request_id: str,
     command: ReassignCommand,
-    connection: Connection,
     actor_id: ActorId,
+    workflow: Workflow,
 ) -> dict:
-    data = WorkflowService(connection).reassign(
+    data = workflow.reassign(
         request_id=request_id, actor_id=actor_id, command=command
     )
     return {"success": True, "data": data}
@@ -94,9 +129,9 @@ def reassign_request(
 
 @router.get("/requests/{request_id}")
 def get_request(
-    request_id: str, connection: Connection, actor_id: ActorId
+    request_id: str, actor_id: ActorId, workflow: Workflow
 ) -> dict:
-    data = WorkflowService(connection).get_request(
+    data = workflow.get_request(
         request_id=request_id, actor_id=actor_id
     )
     return {"success": True, "data": data}
@@ -104,9 +139,9 @@ def get_request(
 
 @router.get("/requests/{request_id}/history")
 def get_request_history(
-    request_id: str, connection: Connection, actor_id: ActorId
+    request_id: str, actor_id: ActorId, workflow: Workflow
 ) -> dict:
-    data = WorkflowService(connection).get_request_history(
+    data = workflow.get_request_history(
         request_id=request_id, actor_id=actor_id
     )
     return {"success": True, "data": data}
@@ -124,15 +159,15 @@ def preview_advisory(
 
 @router.get("/requests")
 def list_requests(
-    connection: Connection,
     actor_id: ActorId,
+    workflow: Workflow,
     state: Annotated[RequestState | None, Query()] = None,
     assigned_to: Annotated[str | None, Query()] = None,
     citizen_id: Annotated[str | None, Query()] = None,
     category: Annotated[Category | None, Query()] = None,
     is_overdue: Annotated[bool | None, Query()] = None,
 ) -> dict:
-    data = WorkflowService(connection).list_requests(
+    data = workflow.list_requests(
         actor_id=actor_id,
         state=state,
         assigned_to=assigned_to,
@@ -144,12 +179,12 @@ def list_requests(
 
 
 @router.get("/audit")
-def list_audit(connection: Connection, actor_id: ActorId) -> dict:
-    data = WorkflowService(connection).list_audit(actor_id=actor_id)
+def list_audit(actor_id: ActorId, workflow: Workflow) -> dict:
+    data = workflow.list_audit(actor_id=actor_id)
     return {"success": True, "data": data}
 
 
 @router.get("/audit/verify")
-def verify_audit(connection: Connection, actor_id: ActorId) -> dict:
-    data = WorkflowService(connection).verify_audit(actor_id=actor_id)
+def verify_audit(actor_id: ActorId, workflow: Workflow) -> dict:
+    data = workflow.verify_audit(actor_id=actor_id)
     return {"success": True, "data": data}

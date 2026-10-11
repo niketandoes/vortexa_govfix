@@ -24,10 +24,10 @@ class FoundationTests(unittest.TestCase):
 
     def test_seed_contains_expected_fictional_records(self) -> None:
         self.assertEqual(
-            self.connection.execute("SELECT COUNT(*) FROM users").fetchone()[0], 5
+            self.connection.execute("SELECT COUNT(*) FROM users").fetchone()[0], 7
         )
         self.assertEqual(
-            self.connection.execute("SELECT COUNT(*) FROM requests").fetchone()[0], 3
+            self.connection.execute("SELECT COUNT(*) FROM requests").fetchone()[0], 6
         )
         self.assertEqual(
             self.connection.execute("SELECT COUNT(*) FROM ai_suggestions").fetchone()[0],
@@ -39,34 +39,34 @@ class FoundationTests(unittest.TestCase):
         self.assertEqual(clock["offset_seconds"], 0)
         self.assertEqual(clock["is_frozen"], 0)
 
-    def test_near_deadline_fixture_is_one_hour_from_breach(self) -> None:
+    def test_escalation_demo_fixture_is_seeded_at_reference_time(self) -> None:
         request = self.connection.execute(
-            "SELECT * FROM requests WHERE id = 'REQ-2026-0003'"
+            "SELECT * FROM requests WHERE id = 'REQ-2026-0006'"
         ).fetchone()
         self.assertEqual(request["category"], "Water Leak")
-        self.assertEqual(request["state"], "ASSIGNED")
-        self.assertEqual(request["deadline"], "2026-10-11T13:00:00.000000Z")
+        self.assertEqual(request["state"], "IN_PROGRESS")
+        self.assertEqual(request["deadline"], "2026-10-12T12:00:00.000000Z")
 
     def test_foreign_keys_are_enabled(self) -> None:
         with self.assertRaises(sqlite3.IntegrityError):
             self.connection.execute(
                 """
                 INSERT INTO requests (
-                    id, citizen_id, title, text, category, state,
-                    sla_started_at, created_at, updated_at, deadline
+                    id, citizen_id, title, text, location, category, state,
+                    sla_started_at, created_at, updated_at, triage_deadline, deadline
                 ) VALUES (
-                    'REQ-BAD-FK', 'MISSING', 'Title', 'Text', 'Uncategorised',
+                    'REQ-BAD-FK', 'MISSING', 'Title', 'Text', 'Sector 1', 'Uncategorised',
                     'SUBMITTED', '2026-10-11T12:00:00Z',
                     '2026-10-11T12:00:00Z', '2026-10-11T12:00:00Z',
-                    '2026-10-14T12:00:00Z'
+                    '2026-10-11T14:00:00Z', '2026-10-14T12:00:00Z'
                 )
                 """
             )
 
-    def test_assignee_must_be_an_officer(self) -> None:
-        with self.assertRaisesRegex(sqlite3.IntegrityError, "must reference an Officer"):
+    def test_assignee_must_be_a_field_officer(self) -> None:
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "must reference a Field Officer"):
             self.connection.execute(
-                "UPDATE requests SET assigned_to = 'USR-SUP-01' WHERE id = 'REQ-2026-0001'"
+                "UPDATE requests SET assigned_to = 'USR-OFF-01' WHERE id = 'REQ-2026-0001'"
             )
 
     def test_audit_rows_cannot_be_updated_or_deleted(self) -> None:
@@ -129,7 +129,7 @@ class FoundationTests(unittest.TestCase):
         initialize_database(self.connection)
         initialize_database(self.connection)
         self.assertEqual(
-            self.connection.execute("SELECT COUNT(*) FROM users").fetchone()[0], 5
+            self.connection.execute("SELECT COUNT(*) FROM users").fetchone()[0], 7
         )
 
 
@@ -138,19 +138,22 @@ class ModelTests(unittest.TestCase):
         model = RequestCreate(
             title="  Broken streetlight  ",
             text="  The lamp is dark.  ",
+            location="  Ward 8, Station Road  ",
             reported_category=Category.STREETLIGHT,
         )
         self.assertEqual(model.title, "Broken streetlight")
+        self.assertEqual(model.location, "Ward 8, Station Road")
 
     def test_request_create_rejects_blank_text(self) -> None:
         with self.assertRaises(ValidationError):
-            RequestCreate(title=" ", text="Complaint")
+            RequestCreate(title=" ", text="Complaint", location="Ward 8")
 
     def test_uncategorised_cannot_be_a_citizen_reported_category(self) -> None:
         with self.assertRaises(ValidationError):
             RequestCreate(
                 title="Issue",
                 text="Details",
+                location="Ward 8",
                 reported_category=Category.UNCATEGORISED,
             )
 

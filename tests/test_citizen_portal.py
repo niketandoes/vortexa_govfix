@@ -162,6 +162,7 @@ class CitizenPortalTests(unittest.TestCase):
                 to_state=RequestState.RESOLVED,
                 expected_version=4,
                 resolution_notes="Fixed.",
+                resolution_evidence_json={"photo": "fixed.jpg"},
             ),
         )
 
@@ -279,6 +280,7 @@ class CitizenPortalTests(unittest.TestCase):
                 to_state=RequestState.RESOLVED,
                 expected_version=6,
                 resolution_notes="Repairs executed",
+                resolution_evidence_json={"photo": "repaired.jpg"},
             ),
         )
         self.assertEqual(req["state"], "RESOLVED")
@@ -418,6 +420,7 @@ class CitizenPortalTests(unittest.TestCase):
                 to_state=RequestState.RESOLVED,
                 expected_version=4,
                 resolution_notes="Asphalt patch completed.",
+                resolution_evidence_json={"photo": "asphalt.jpg"},
             ),
         )
 
@@ -471,6 +474,7 @@ class CitizenPortalTests(unittest.TestCase):
                 to_state=RequestState.RESOLVED,
                 expected_version=4,
                 resolution_notes="Bin emptied.",
+                resolution_evidence_json={"photo": "bin_empty.jpg"},
             ),
         )
 
@@ -540,6 +544,7 @@ class CitizenPortalTests(unittest.TestCase):
                 to_state=RequestState.RESOLVED,
                 expected_version=4,
                 resolution_notes="Pipe welded.",
+                resolution_evidence_json={"photo": "weld.jpg"},
             ),
         )
         closed = self.service.transition(
@@ -564,12 +569,21 @@ class CitizenPortalTests(unittest.TestCase):
         )
         self.assertEqual(reopened["state"], "REOPENED")
 
-        # Now re-close it
+        # Now re-close it: Supervisor reassigns REOPENED -> ASSIGNED
+        self.service.transition(
+            request_id=req_id,
+            actor_id="USR-SUP-01",
+            command=TransitionCommand(
+                to_state=RequestState.ASSIGNED,
+                expected_version=7,
+                assigned_to="USR-FLD-01",
+            ),
+        )
         self.service.transition(
             request_id=req_id,
             actor_id="USR-FLD-01",
             command=TransitionCommand(
-                to_state=RequestState.IN_PROGRESS, expected_version=7
+                to_state=RequestState.IN_PROGRESS, expected_version=8
             ),
         )
         self.service.transition(
@@ -577,15 +591,16 @@ class CitizenPortalTests(unittest.TestCase):
             actor_id="USR-FLD-01",
             command=TransitionCommand(
                 to_state=RequestState.RESOLVED,
-                expected_version=8,
+                expected_version=9,
                 resolution_notes="Pipe replaced entirely.",
+                resolution_evidence_json={"photo": "replacement.jpg"},
             ),
         )
         self.service.transition(
             request_id=req_id,
             actor_id="USR-CIT-01",
             command=TransitionCommand(
-                to_state=RequestState.CLOSED, expected_version=9
+                to_state=RequestState.CLOSED, expected_version=10
             ),
         )
 
@@ -599,7 +614,7 @@ class CitizenPortalTests(unittest.TestCase):
                 actor_id="USR-CIT-01",
                 command=TransitionCommand(
                     to_state=RequestState.REOPENED,
-                    expected_version=10,
+                    expected_version=11,
                     reopen_reason="Late reopen request.",
                 ),
             )

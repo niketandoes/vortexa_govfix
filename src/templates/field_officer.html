@@ -222,7 +222,11 @@
       try {
         await GovFix.transitionRequest(id, "RESOLVED", {
           expected_version: version,
-          reason: notes
+          resolution_notes: notes,
+          resolution_evidence_json: {
+            completion_summary: notes,
+            recorded_at: new Date().toISOString()
+          }
         });
         GovFix.closeModal("resolution-modal");
         GovFix.showToast(`Resolution submitted for ${id}.`, "success");

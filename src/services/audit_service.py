@@ -102,12 +102,18 @@ def verify_audit_chain(connection: sqlite3.Connection) -> dict[str, Any]:
         if row["previous_hash"] != expected_previous_hash:
             return {
                 "valid": False,
+                "is_valid": False,
+                "error": "TAMPER_DETECTED",
                 "compromised_id": row["id"],
+                "tampered_record_id": row["id"],
                 "compromised_index": idx,
                 "reason": f"Previous hash mismatch at record {row['id']}",
                 "total_verified": idx,
                 "total_records": len(rows),
                 "chain_head": expected_previous_hash,
+                "expected_previous_hash": expected_previous_hash,
+                "actual_previous_hash": row["previous_hash"],
+                "tampered_at": row["timestamp"],
             }
 
         content = canonical_json(
@@ -130,20 +136,28 @@ def verify_audit_chain(connection: sqlite3.Connection) -> dict[str, Any]:
         if row["hash"] != expected_hash:
             return {
                 "valid": False,
+                "is_valid": False,
+                "error": "TAMPER_DETECTED",
                 "compromised_id": row["id"],
+                "tampered_record_id": row["id"],
                 "compromised_index": idx,
                 "reason": f"Cryptographic SHA-256 hash tampering detected at record {row['id']}",
                 "total_verified": idx,
                 "total_records": len(rows),
                 "chain_head": expected_previous_hash,
+                "expected_hash": expected_hash,
+                "actual_hash": row["hash"],
+                "tampered_at": row["timestamp"],
             }
 
         expected_previous_hash = row["hash"]
 
     return {
         "valid": True,
+        "is_valid": True,
         "total_records": len(rows),
         "total_verified": len(rows),
-        "chain_head": expected_previous_hash,
+        "verified_records_count": len(rows),
+        "chain_head": expected_previous_hash if rows else None,
     }
 

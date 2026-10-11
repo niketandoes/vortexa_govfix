@@ -21,9 +21,9 @@ DATASET_PATH = Path(__file__).parent / "dataset.json"
 
 SLA_HOURS = {
     "Water Leak": 24,
-    "Garbage Collection": 48,
-    "Streetlight": 72,
-    "Pothole": 168,
+    "Garbage Collection": 24,
+    "Streetlight": 48,
+    "Pothole": 72,
     "Uncategorised": 72
 }
 

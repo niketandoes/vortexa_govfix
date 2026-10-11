@@ -20,13 +20,13 @@ from src.services.clock_service import ClockService
 
 SLA_HOURS: dict[str, int] = {
     "Water Leak": 24,
-    "Garbage Collection": 48,
-    "Streetlight": 72,
-    "Pothole": 168,
+    "Garbage Collection": 24,
+    "Streetlight": 48,
+    "Pothole": 72,
     "Uncategorised": 72,
 }
 
-ACTIVE_STATES = {"SUBMITTED", "ACKNOWLEDGED", "ASSIGNED", "IN_PROGRESS", "REOPENED"}
+ACTIVE_STATES = {"SUBMITTED", "ACKNOWLEDGED", "NEEDS_INFO", "ASSIGNED", "IN_PROGRESS", "REOPENED"}
 TERMINAL_STATES = {"RESOLVED", "CLOSED", "REJECTED"}
 
 LEVEL_1_RECIPIENT = "USR-SUP-01"  # Supervisor
@@ -39,17 +39,43 @@ def compute_deadline(category: str, start_time: datetime) -> datetime:
     return start_time.astimezone(UTC) + timedelta(hours=sla)
 
 
-def is_overdue(deadline: datetime, state: str, current_time: datetime) -> bool:
-    """Return True if grievance is active and current time is past SLA deadline."""
-    if state not in ACTIVE_STATES:
+def is_overdue(
+    deadline: datetime,
+    state: str,
+    current_time: datetime,
+    paused_at: datetime | None = None,
+) -> bool:
+    """Return True if grievance is active and current time is past SLA deadline, unless paused."""
+    if state not in ACTIVE_STATES or state == "NEEDS_INFO" or paused_at is not None:
         return False
     return current_time.astimezone(UTC) > deadline.astimezone(UTC)
+
+
+def is_at_risk(
+    current_time: datetime,
+    sla_started_at: datetime,
+    category: str,
+    state: str,
+    paused_at: datetime | None = None,
+    total_paused_seconds: int = 0,
+) -> bool:
+    """Return True if active ticket is at risk (0.75x <= ratio < 1.0) and not paused."""
+    if state not in ACTIVE_STATES or state == "NEEDS_INFO" or paused_at is not None:
+        return False
+    sla = SLA_HOURS.get(category, 72)
+    elapsed_seconds = (
+        current_time.astimezone(UTC) - sla_started_at.astimezone(UTC)
+    ).total_seconds() - total_paused_seconds
+    ratio = elapsed_seconds / (sla * 3600.0)
+    return 0.75 <= ratio < 1.0
 
 
 def calculate_escalation_level(
     current_time: datetime,
     sla_started_at: datetime,
     category: str,
+    paused_at: datetime | None = None,
+    total_paused_seconds: int = 0,
 ) -> tuple[int, float]:
     """Calculate target escalation level and elapsed SLA ratio.
 
@@ -57,9 +83,13 @@ def calculate_escalation_level(
     - Level 0: ratio < 1.0
     - Level 1: ratio >= 1.0 (Supervisor)
     - Level 2: ratio >= 1.5 (Department/Municipal Head)
+    When paused, effective_now is frozen at paused_at, freezing progression.
     """
     sla = SLA_HOURS.get(category, 72)
-    elapsed_seconds = (current_time.astimezone(UTC) - sla_started_at.astimezone(UTC)).total_seconds()
+    effective_now = paused_at if paused_at is not None else current_time
+    elapsed_seconds = (
+        effective_now.astimezone(UTC) - sla_started_at.astimezone(UTC)
+    ).total_seconds() - total_paused_seconds
     ratio = max(0.0, elapsed_seconds / (sla * 3600.0))
 
     if ratio >= 1.5:
@@ -105,9 +135,11 @@ class EscalationService:
             with transaction(conn, immediate=True):
                 cursor = conn.execute(
                     """
-                    SELECT id, category, state, escalation_level, sla_started_at, sla_cycle, deadline
+                    SELECT id, category, state, escalation_level, sla_started_at, sla_cycle, deadline,
+                           paused_at, total_paused_seconds
                     FROM requests
                     WHERE state IN ('SUBMITTED', 'ACKNOWLEDGED', 'ASSIGNED', 'IN_PROGRESS', 'REOPENED')
+                      AND paused_at IS NULL
                     """
                 )
                 active_requests = cursor.fetchall()
@@ -117,9 +149,12 @@ class EscalationService:
                     category = req["category"]
                     current_level = req["escalation_level"]
                     sla_cycle = req["sla_cycle"]
+                    total_paused = req["total_paused_seconds"] or 0
 
                     sla_started_dt = datetime.fromisoformat(req["sla_started_at"].replace("Z", "+00:00")).astimezone(UTC)
-                    target_level, ratio = calculate_escalation_level(now_sim_utc, sla_started_dt, category)
+                    target_level, ratio = calculate_escalation_level(
+                        now_sim_utc, sla_started_dt, category, total_paused_seconds=total_paused
+                    )
 
                     if target_level > current_level:
                         upd = conn.execute(
